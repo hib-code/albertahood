@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  ScrollView,
-  Alert,
   StyleSheet,
   TouchableOpacity,
   FlatList,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -15,27 +14,28 @@ import FormInput from '../components/FormInput';
 import Button from '../components/Button';
 import Icon from '../components/Icon';
 import { ClientData } from '../types/ClientData';
-import { generatePDF } from '../utils/pdfGenerator';
+import { generatePDF, ReportPayload } from '../utils/pdfGenerator';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
 
 export default function SearchClientScreen() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [allClients, setAllClients] = useState<ClientData[]>([]);
-  const [filteredClients, setFilteredClients] = useState<ClientData[]>([]);
+  const [allReports, setAllReports] = useState<ReportPayload[]>([]);
+  const [filteredReports, setFilteredReports] = useState<ReportPayload[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Charger les clients depuis AsyncStorage au démarrage
+  const [selectedClient, setSelectedClient] = useState<ClientData | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  // Charger les rapports depuis AsyncStorage au démarrage
   useEffect(() => {
     const loadClients = async () => {
       try {
         const storedClientsJson = await AsyncStorage.getItem('reports');
-        const storedReports = storedClientsJson ? JSON.parse(storedClientsJson) : [];
-        const clientsFromStorage: ClientData[] = storedReports.map((r: any) => r.clientData);
-        setAllClients(clientsFromStorage);
-        setFilteredClients(clientsFromStorage); // afficher tous les clients par défaut
+        const storedReports: ReportPayload[] = storedClientsJson ? JSON.parse(storedClientsJson) : [];
+        setAllReports(storedReports);
+        setFilteredReports(storedReports); // afficher tous les rapports par défaut
       } catch (error) {
         console.error('Erreur en chargeant les clients locaux:', error);
       }
@@ -44,44 +44,42 @@ export default function SearchClientScreen() {
   }, []);
 
   // Recherche de clients
-  const handleSearch = () => {
+  const applySearch = (query: string) => {
     setIsSearching(true);
 
     setTimeout(() => {
-      const results = searchQuery.trim()
-        ? allClients.filter(client =>
-            client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            client.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            client.phone.includes(searchQuery)
-          )
-        : allClients; 
+      const q = query.trim().toLowerCase();
+      const results = q
+        ? allReports.filter(r => {
+            const c = r.clientData;
+            return (
+              (c.name || '').toLowerCase().includes(q) ||
+              (c.email || '').toLowerCase().includes(q) ||
+              (c.phone || '').toLowerCase().includes(q)
+            );
+          })
+        : allReports;
 
-      setFilteredClients(results);
+      setFilteredReports(results);
       setIsSearching(false);
-
-      if (results.length === 0) {
-        Alert.alert('No Results', 'No clients found matching your search criteria');
-      }
     }, 300);
   };
 
-  // Sélection d'un client
-  const handleClientSelect = async (client: ClientData) => {
-    Alert.alert(
-      'Export PDF Report',
-      `Generate PDF report for ${client.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Export PDF', onPress: () => exportClientPDF(client) },
-      ]
-    );
+  const handleSearch = () => applySearch(searchQuery);
+
+  // Sélection d'un client → ouvrir modal
+  const handleClientSelect = (client: ClientData) => {
+    setSelectedClient(client);
+    setModalVisible(true);
   };
 
   // Export PDF
   const exportClientPDF = async (client: ClientData) => {
     setIsGenerating(true);
     try {
-      const pdfUri = await generatePDF(client);
+      // Trouver le rapport complet correspondant pour inclure photos et checklists
+      const report = allReports.find(r => r.clientData.email === client.email && r.clientData.name === client.name) || { clientData: client };
+      const pdfUri = await generatePDF(report as ReportPayload);
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
@@ -90,11 +88,8 @@ export default function SearchClientScreen() {
           dialogTitle: `Export PDF Report - ${client.name}`,
         });
       }
-
-      Alert.alert('Success', `PDF report for ${client.name} generated and exported successfully!`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      Alert.alert('Error', 'Failed to generate PDF report. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -136,7 +131,7 @@ export default function SearchClientScreen() {
           <FormInput
             label="Search Clients"
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={(text) => { setSearchQuery(text); applySearch(text); }}
             placeholder="Enter name, email, or phone number"
           />
           <Button
@@ -147,21 +142,62 @@ export default function SearchClientScreen() {
           />
         </View>
 
-        {filteredClients.length > 0 && (
+        {filteredReports.length > 0 && (
           <View style={styles.resultsSection}>
             <Text style={styles.resultsTitle}>
-              {filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''} found
+              {filteredReports.length} client{filteredReports.length !== 1 ? 's' : ''} found
             </Text>
             
             <FlatList
-              data={filteredClients}
-              renderItem={renderClientItem}
-              keyExtractor={(item) => item.email}
+              data={filteredReports}
+              renderItem={({ item }) => renderClientItem({ item: item.clientData })}
+              keyExtractor={(item, index) => `${item.clientData.email}-${index}-${item.clientData.name}`}
               showsVerticalScrollIndicator={false}
               style={styles.clientsList}
             />
           </View>
         )}
+
+        {/* Modal pour export PDF */}
+        <Modal
+          visible={modalVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Export PDF Report</Text>
+              {selectedClient && (
+                <Text style={styles.modalText}>
+                  Voulez-vous générer un PDF pour{" "}
+                  <Text style={{ fontWeight: "bold" }}>{selectedClient.name}</Text> ?
+                </Text>
+              )}
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    if (selectedClient) {
+                      exportClientPDF(selectedClient);
+                    }
+                    setModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalButtonText}>Télécharger PDF</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.border }]}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={styles.modalButtonText}>Annuler</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {isGenerating && (
           <View style={styles.loadingOverlay}>
@@ -265,5 +301,48 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-});
 
+  // Styles Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    width: "80%",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center",
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 10,
+    color: colors.text,
+  },
+  modalText: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
+    color: colors.textSecondary,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    marginHorizontal: 5,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  modalButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+});

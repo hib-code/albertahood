@@ -1,14 +1,14 @@
 {
   "expo": {
     "name": "ALBERTA HOOD CLEANING",
-    "slug": "ALBERTA HOOD CLEANING",
+    "slug": "alberta-hood-cleaning",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/Logo .png",
+    "icon": "./assets/images/final_quest_240x240.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/Logo .png",
+      "image": "./assets/images/final_quest_240x240.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -21,14 +21,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/Logo .png",
+        "foregroundImage": "./assets/images/Logo.png",
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.Natively"
     },
     "web": {
-      "favicon": "./assets/images/final_quest_240x240.png",
+      "favicon": "./assets/images/Logo.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -41,7 +41,10 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "fb1bd9d7-e1c3-4c5d-a7ea-39ca12d78e31"
+      }
     }
   }
 }
