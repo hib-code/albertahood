@@ -1,14 +1,14 @@
 {
   "expo": {
     "name": "ALBERTA HOOD CLEANING",
-    "slug": "alberta-hood-cleaning",
+    "slug": "alberta",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/final_quest_240x240.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/final_quest_240x240.png",
+      "image": "./assets/images/Logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -43,8 +43,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "fb1bd9d7-e1c3-4c5d-a7ea-39ca12d78e31"
+        "projectId": "563ee88f-c96c-45bb-a87f-59052f617787"
       }
-    }
+    },
+    "owner": "kobayasheseen"
   }
 }

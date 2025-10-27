@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   ScrollView,
   Alert,
   StyleSheet,
@@ -21,10 +22,16 @@ import PhotoUpload from '../components/PhotoUpload';
 import MultiPhotoUpload from '../components/MultiPhotoUpload';
 import { Checkbox, Menu, Button as PaperButton } from 'react-native-paper';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
+import Signature from 'react-native-signature-canvas';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 
 export default function NewReportScreen() {
+  
+
+
+  //-------------date format--------------------
   
   // -------------------- STATES --------------------
   const [clientData, setClientData] = useState<ClientData>({
@@ -37,7 +44,7 @@ export default function NewReportScreen() {
     zip: '',
     technician: 'Anoir Boukhriss',
     certification: '#AB159.1',
-    serviceDate: new Date().toLocaleDateString(),
+    serviceDate: new Date().toISOString().split('T')[0],
     nextService: '',
     scheduledTime: '',
     arrivalTime: '',
@@ -68,7 +75,8 @@ export default function NewReportScreen() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [menuVisible, setMenuVisible] = useState(false);
   const [serviceSelected, setServiceSelected] = useState(false);
-
+  const [showSignaturePad, setShowSignaturePad] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   // Fonction pour forcer la fermeture du menu
   const closeMenu = () => {
     setMenuVisible(false);
@@ -174,9 +182,14 @@ export default function NewReportScreen() {
   const [showArrivalTimePicker, setShowArrivalTimePicker] = useState(false);
   const [showDepartureTimePicker, setShowDepartureTimePicker] = useState(false);
   const [showScheduledTimePicker, setShowScheduledTimePicker] = useState(false);
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [nextServiceDate, setNextServiceDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(
+    clientData.serviceDate ? new Date(clientData.serviceDate) : new Date()
+  );
+  const [nextServiceDate, setNextServiceDate] = useState(
+    clientData.nextService ? new Date(clientData.nextService) : new Date()
+  );
+
+
   const [arrivalTime, setArrivalTime] = useState(new Date());
   const [departureTime, setDepartureTime] = useState(new Date());
   const [scheduledTime, setScheduledTime] = useState(new Date());
@@ -190,21 +203,22 @@ export default function NewReportScreen() {
   };
 
   // Fonctions pour les sélecteurs de date et d'heure
-  const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setCurrentDate(selectedDate);
-      updateClientData('serviceDate', selectedDate.toLocaleDateString());
-    }
-  };
+    const onDateChange = (event: any, selectedDate?: Date) => {
+      setShowDatePicker(false);
+      if (selectedDate) {
+        setCurrentDate(selectedDate);
+        updateClientData('serviceDate', selectedDate.toISOString().split('T')[0]); // format YYYY-MM-DD
+      }
+    };
 
-  const onNextServiceDateChange = (event: any, selectedDate?: Date) => {
-    setShowNextServiceDatePicker(false);
-    if (selectedDate) {
-      setNextServiceDate(selectedDate);
-      updateClientData('nextService', selectedDate.toLocaleDateString());
-    }
-  };
+    const onNextServiceDateChange = (event: any, selectedDate?: Date) => {
+      setShowNextServiceDatePicker(false);
+      if (selectedDate) {
+        setNextServiceDate(selectedDate);
+        updateClientData('nextService', selectedDate.toISOString().split('T')[0]); 
+      }
+    };
+
 
   const onArrivalTimeChange = (event: any, selectedTime?: Date) => {
     setShowArrivalTimePicker(false);
@@ -249,6 +263,12 @@ export default function NewReportScreen() {
     return true;
   };
 
+ 
+
+
+  const handleSignatureClear = () => {
+    setShowSignaturePad(false);
+  };
   const handleExportPDF = async () => {
     if (!validateForm()) return;
 
@@ -261,7 +281,7 @@ export default function NewReportScreen() {
         exhaustFanPhotos,
         ductFanPhotos,
         canopyPhotos,
-        selectedServices: selectedCategories, // Ajouter les services sélectionnés
+        selectedServices: selectedCategories, 
         hoodType,
         damperOperates,
         filterConfirming,
@@ -416,6 +436,7 @@ const resetForm = () => {
         style={commonStyles.scrollView}
         contentContainerStyle={[commonStyles.scrollContent, styles.scrollContent]}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={scrollEnabled}
       >
         {/* Client Info */}
         <View style={styles.section}>
@@ -1019,8 +1040,11 @@ const resetForm = () => {
           />
         </View>
 
-        {/* Signature Section */}
-        <View style={styles.section}>
+      {/* 🖊️ Section Signature */}
+
+
+ 
+   <View style={styles.section}>
           <Text style={styles.sectionTitle}>Signature</Text>
           <FormInput
             label="Owner Representative:"
@@ -1029,18 +1053,21 @@ const resetForm = () => {
             placeholder="Enter owner representative"
           />
           <FormInput
-            label="Signature:"
+            label="Signature client:"
             value={clientData.signature || ''}
             onChangeText={(text) => updateClientData('signature', text)}
             placeholder="Enter signature"
           />
-          <FormInput
-            label="Date:"
-            value={clientData.reportDate || ''}
-            onChangeText={(text) => updateClientData('reportDate', text)}
-            placeholder="Enter date"
-          />
-        </View>
+
+      {/* Champ Date */}
+      <FormInput
+        label="Date:"
+        value={clientData.reportDate || ''}
+        onChangeText={(text) => updateClientData('reportDate', text)}
+        placeholder="Enter date"
+      />
+    </View>
+
 
         {/* Export PDF */}
      <View style={styles.actionSection}>
@@ -1129,7 +1156,12 @@ const styles = StyleSheet.create({
   backButton: { padding: 8 },
   placeholder: { width: 40 },
   scrollContent: { padding: 20 },
-  section: { marginBottom: 32 },
+  section: {
+    marginBottom: 32,
+    backgroundColor: '#fff',
+    padding: 10,
+    margin: 5, // fusionne les propriétés ici
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
@@ -1203,5 +1235,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     marginBottom: 8,
+  },
+  button: {
+    backgroundColor: '#007bff',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });

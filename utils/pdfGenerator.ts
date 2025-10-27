@@ -4,6 +4,7 @@ import { Asset } from 'expo-asset';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { ClientData } from '../types/ClientData';
 
+
 export type ReportPayload = {
   clientData: ClientData;
   beforePhotos?: string[]; // file:// URIs
@@ -33,6 +34,73 @@ export type ReportPayload = {
     areasNotCleaned: string;
     postCleaning: string;
   };
+   logoBase64?: string;
+};
+const loadLogoBase64 = async (): Promise<string | null> => {
+  try {
+    const logoAsset = Asset.fromModule(require('../assets/images/Logo.png'));
+    await logoAsset.downloadAsync();
+    if (logoAsset.localUri) {
+      const base64 = await FileSystem.readAsStringAsync(logoAsset.localUri, { encoding: 'base64' });
+      return base64;
+    }
+    return null;
+  } catch (e) {
+    console.warn('Impossible de charger le logo:', e instanceof Error ? e.message : e);
+    return null;
+  }
+};
+
+
+
+
+//-----------------------------
+// supabase
+// ----------------------------
+const logoUrl = 'https://glulvpwfoubliscogfso.supabase.co/storage/v1/object/public/img/Logo.png';
+// ----------------------------
+// Fonction pour encoder une photo
+// ----------------------------
+type EncodedImage = { base64: string; mime: string };
+const encodeImage = async (uri: string): Promise<EncodedImage | null> => {
+  try {
+    const manipulated = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1280 } }],
+      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    if (manipulated.base64) return { base64: manipulated.base64, mime: 'image/jpeg' };
+    return null;
+  } catch (e) {
+    console.warn('Erreur conversion image:', uri, e);
+    return null;
+  }
+};
+
+const encodeManyImages = async (uris?: string[]): Promise<EncodedImage[]> => {
+  if (!uris) return [];
+  const out: EncodedImage[] = [];
+  for (const u of uris) {
+    const enc = await encodeImage(u);
+    if (enc) out.push(enc);
+  }
+  return out;
+};
+
+// ----------------------------
+// Fonction pour créer une grille d’images
+// ----------------------------
+const renderGrid = (title: string, items: EncodedImage[], serviceName?: string) => {
+  if (!items || items.length === 0) return '';
+  const displayTitle = serviceName ? `${serviceName} - ${title}` : title;
+  const imgs = items.map((img, i) => {
+    const caption = serviceName ? `${serviceName} ${i + 1}` : `${title} ${i + 1}`;
+    return `<div style="text-align:center; margin-bottom:10px;">
+      <img src="data:${img.mime};base64,${img.base64}" style="width:100%; max-width:300px; height:auto; border:1px solid #ddd; border-radius:4px;" />
+      <div>${caption}</div>
+    </div>`;
+  }).join('');
+  return `<h3>${displayTitle}</h3>${imgs}`;
 };
 
 export const testLogoLoading = async (): Promise<boolean> => {
@@ -67,6 +135,7 @@ export const testLogoLoading = async (): Promise<boolean> => {
 export const generatePDF = async (payload: ReportPayload): Promise<string> => {
   const { clientData } = payload;
   console.log('Generating PDF for client:', clientData.name);
+  console.log('Signature:', clientData.signature);
 
   // Fonction pour formater les dates
   const formatDate = (date: Date): string => {
@@ -279,6 +348,10 @@ export const generatePDF = async (payload: ReportPayload): Promise<string> => {
       </div>`;
     };
 
+
+
+
+  
     const renderGrid = (title: string, items: EncodedImage[], serviceName?: string) => {
       if (!items || items.length === 0) return '';
       const displayTitle = serviceName ? `${serviceName} - ${title}` : title;
@@ -320,765 +393,328 @@ export const generatePDF = async (payload: ReportPayload): Promise<string> => {
       </div>`;
     };
 
+
+
     const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>KITCHEN EXHAUST CLEANING SERVICE REPORT</title>
-          <style>
-            body {
-              font-family: 'Arial', sans-serif;
-              margin: 20px;
-              color: #000000;
-              background: #ffffff;
-              line-height: 1.4;
-              font-size: 12px;
+     <!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>KITCHEN EXHAUST CLEANING SERVICE REPORT</title>
+    <style>
+      body {
+        font-family: 'Arial', sans-serif;
+        margin: 20px;
+        color: #000000;
+        background: #ffffff;
+        line-height: 1.4;
+        font-size: 12px;
+      }
+      .report-header {
+        margin-bottom: 20px;
+        border-bottom: 2px solid #000;
+        padding-bottom: 15px;
+      }
+      .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+      .header-left, .header-right {
+        flex: 1;
+        font-size: 11px;
+      }
+      .header-left { text-align: left; }
+      .header-right { text-align: right; }
+      .header-center { flex: 1; text-align: center; }
+      .logo {
+            max-height: 300px;
+            max-width: 300px;
+              display: block;  
+              margin: 0 auto;
+              
             }
-            .report-header {
-              margin-bottom: 20px;
-              border-bottom: 2px solid #000;
-              padding-bottom: 15px;
-            }
-            .header-content {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              margin-bottom: 15px;
-            }
-            .header-left, .header-right {
-              flex: 1;
-              font-size: 11px;
-            }
-            .header-left {
-              text-align: left;
-            }
-            .header-right {
-              text-align: right;
-            }
-            .header-center {
-              flex: 1;
-              text-align: center;
-            }
-            .logo {
-              max-height: 60px;
-              max-width: 200px;
-            }
-            .logo-placeholder {
-              font-size: 24px;
-              font-weight: bold;
-              color: #ccc;
-              border: 2px dashed #ccc;
-              padding: 20px;
-              display: inline-block;
-            }
-            .customizable-text {
-              margin-bottom: 5px;
-              font-weight: bold;
-            }
-            .report-title {
-              font-size: 18px;
-              font-weight: bold;
-              text-transform: uppercase;
-              text-align: center;
-            }
-            .client-section {
-              display: flex;
-              justify-content: space-between;
-              margin-bottom: 20px;
-            }
-            .client-info {
-              flex: 1;
-            }
-            .technician-info {
-              flex: 1;
-              text-align: right;
-            }
-            .time-logs {
-              display: flex;
-              justify-content: space-between;
-              margin-bottom: 20px;
-              font-size: 11px;
-            }
-            .time-item {
-              display: flex;
-              align-items: center;
-              gap: 5px;
-            }
-            .checkbox {
-              width: 12px;
-              height: 12px;
-              border: 1px solid #000;
-              display: inline-block;
-              margin-right: 5px;
-            }
-            .checked {
-              background: #000;
-            }
-            .section {
-              margin-bottom: 15px;
-              border: 1px solid #000;
-            }
-            .section.photo-section {
-              margin-bottom: 5px;
-            }
-            .section-title {
-              background: #f0f0f0;
-              font-weight: bold;
-              padding: 5px 10px;
-              border-bottom: 1px solid #000;
-              font-size: 13px;
-            }
-            .section-content {
-              padding: 10px;
-            }
-            .form-row {
-              display: flex;
-              align-items: center;
-              margin-bottom: 8px;
-              font-size: 11px;
-            }
-            .form-row label {
-              margin-right: 10px;
-              min-width: 150px;
-            }
-            .form-row input[type="checkbox"] {
-              margin-right: 5px;
-            }
-            .form-row input[type="text"] {
-              border: 1px solid #000;
-              padding: 2px 5px;
-              width: 100px;
-            }
-            .comments {
-              margin-top: 10px;
-              border: 1px solid #000;
-              height: 40px;
-              padding: 5px;
-            }
-            .signature-section {
-              display: flex;
-              justify-content: space-between;
-              margin-top: 30px;
-              border-top: 1px solid #000;
-              padding-top: 10px;
-            }
-            .signature-item {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              width: 200px;
-            }
-            .signature-line {
-              border-bottom: 1px solid #000;
-              width: 100%;
-              height: 20px;
-              margin-bottom: 5px;
-            }
-            .disclaimer {
-              font-size: 10px;
-              margin-top: 20px;
-              text-align: justify;
-              line-height: 1.3;
-            }
-            .page-number {
-              text-align: center;
-              margin-top: 20px;
-              font-size: 11px;
-            }
-            .grid {
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-              gap: 15px;
-              padding: 15px;
-            }
-            .grid.before-photos {
-              grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-              gap: 10px;
-              padding: 10px;
-              margin-bottom: 5px;
-            }
-            .grid.after-photos {
-              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-              gap: 15px;
-              padding: 15px;
-              margin-top: 5px;
-            }
-            .grid-item {
-              text-align: center;
-              border: 1px solid #ddd;
-              padding: 8px;
-              background: #f9f9f9;
-              border-radius: 6px;
-            }
-            .grid-item img {
-              width: 100%;
-              height: 200px;
-              object-fit: contain;
-              border-radius: 4px;
-            }
-            .before-photos .grid-item img {
-              height: 150px;
-            }
-            .after-photos .grid-item img {
-              height: 200px;
-            }
-            .cap {
-              font-size: 9px;
-              font-weight: bold;
-              margin-top: 3px;
-              color: #333;
-              text-align: center;
-            }
-            .services-list {
-              padding: 10px;
-            }
-            .service-item {
-              margin-bottom: 5px;
-              font-size: 11px;
-            }
-            .date-time-input {
-              display: flex;
-              align-items: center;
-              gap: 5px;
-            }
-            .date-input {
-              border: 1px solid #000;
-              padding: 2px 5px;
-              width: 100px;
-              font-size: 11px;
-            }
-            .time-input {
-              border: 1px solid #000;
-              padding: 2px 5px;
-              width: 60px;
-              font-size: 11px;
-            }
-            .calendar-icon {
-              width: 16px;
-              height: 16px;
-              cursor: pointer;
-              background: #f0f0f0;
-              border: 1px solid #ccc;
-              display: inline-block;
-              text-align: center;
-              line-height: 14px;
-              font-size: 10px;
-            }
-            .time-picker {
-              display: flex;
-              align-items: center;
-              gap: 3px;
-            }
-            .time-separator {
-              font-weight: bold;
-            }
-            .page-break {
-              page-break-before: always;
-            }
-            .subsection {
-              margin-bottom: 10px;
-              padding-left: 20px;
-            }
-            .subsection .form-row {
-              margin-bottom: 5px;
-            }
-            .signature-section {
-              display: flex;
-              justify-content: space-between;
-              margin-top: 30px;
-              border-top: 2px solid #000;
-              padding-top: 20px;
-            }
-            .signature-item {
-              flex: 1;
-              text-align: center;
-              margin: 0 10px;
-            }
-            .signature-item label {
-              display: block;
-              font-weight: bold;
-              margin-bottom: 10px;
-              font-size: 12px;
-            }
-            .signature-line {
-              border-bottom: 1px solid #000;
-              height: 30px;
-              margin-bottom: 5px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 11px;
-            }
-            .disclaimer {
-              font-size: 9px;
-              margin-top: 30px;
-              text-align: justify;
-              line-height: 1.3;
-              padding: 15px;
-              border: 1px solid #ccc;
-              background-color: #f9f9f9;
-            }
-          </style>
-        </head>
-        <body>
-          <!-- REPORT HEADER WITH LOGO CENTERED -->
-          <div class="report-header">
-            <div class="header-content">
-              <div class="header-left">
-                <div class="customizable-text">albertahooociee.gmail.com</div>
-                <div class="customizable-text">Your Company Info</div>
-              </div>
-              <div class="header-center">
-                ${logoLoaded ? `<img src="data:image/png;base64,${logoBase64}" alt="Company Logo" class="logo" />` : '<div class="logo-placeholder">LOGO</div>'}
-                ${!logoLoaded ? '<div style="font-size: 10px; color: #999; margin-top: 5px;">Logo not loaded - check console for details</div>' : ''}
-              </div>
-              <div class="header-right">
-                <div class="customizable-text">SERVICE REPORT</div>
-                <div class="customizable-text">Your Right Info</div>
-              </div>
-            </div>
-            <div class="report-title">KITCHEN EXHAUST CLEANING SERVICE REPORT</div>
-          </div>
 
-          <!-- CLIENT & TECHNICIAN INFO -->
-          <div class="client-section">
-            <div class="client-info">
-              <div class="form-row">
-                <label>Client:</label>
-                <input type="text" value="${clientData.name}" />
-              </div>
-              <div class="form-row">
-                <label>Address:</label>
-                <input type="text" value="${clientData.address || ''}" />
-              </div>
-              <div class="form-row">
-                <label>City:</label>
-                <input type="text" value="${clientData.city || ''}" />
-              </div>
-              <div class="form-row">
-                <label>State:</label>
-                <input type="text" value="${clientData.state || ''}" />
-              </div>
-              <div class="form-row">
-                <label>Zip:</label>
-                <input type="text" value="${clientData.zip || ''}" />
-              </div>
-              <div class="form-row">
-                <label>Email:</label>
-                <input type="text" value="${clientData.email}" />
-              </div>
-              <div class="form-row">
-                <label>Phone:</label>
-                <input type="text" value="${clientData.phone}" />
-              </div>
-            </div>
-            <div class="technician-info">
-              <div class="form-row">
-                <label>Technician:</label>
-                <input type="text" value="${clientData.technician || ''}" />
-              </div>
-              <div class="form-row">
-                <label>Certification:</label>
-                <input type="text" value="${clientData.certification || ''}" />
-              </div>
-              <div class="form-row">
-                <label>Service Date:</label>
-                <div class="date-time-input">
-                  <input type="date" class="date-input" value="${clientData.serviceDate || new Date().toISOString().split('T')[0]}" />
-                  <span class="calendar-icon" title="Select Date">📅</span>
-                  <span style="font-size: 10px; color: #666;">(${formatDate(new Date())})</span>
-                </div>
-              </div>
-              <div class="form-row">
-                <label>Next Service:</label>
-                <div class="date-time-input">
-                  <input type="date" class="date-input" value="${clientData.nextService || ''}" />
-                  <span class="calendar-icon" title="Select Next Service Date">📅</span>
-                </div>
-              </div>
-            </div>
-          </div>
+     
+      .customizable-text { margin-bottom: 5px; font-weight: bold; }
+      .report-title {
+        font-size: 18px; font-weight: bold; text-transform: uppercase; text-align: center;
+      }
+      .form-row { display: flex; align-items: center; margin-bottom: 8px; font-size: 11px; }
+      .form-row label { margin-right: 10px; min-width: 150px; }
+      .form-row input[type="text"], .date-input, .time-input {
+        border: 1px solid #000; padding: 2px 5px; font-size: 11px;
+      }
+      .comments { margin-top: 10px; border: 1px solid #000; height: 40px; padding: 5px; }
+      .checkbox { width: 12px; height: 12px; border: 1px solid #000; display: inline-block; margin-right: 5px; }
+      .checked { background: #000; }
+      .disclaimer { font-size: 9px; margin-top: 30px; text-align: justify; line-height: 1.3; padding: 15px; border: 1px solid #ccc; background-color: #f9f9f9; }
+      .page-number { text-align: center; margin-top: 20px; font-size: 11px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; padding: 15px; }
+      .grid-item { text-align: center; border: 1px solid #ddd; padding: 8px; background: #f9f9f9; border-radius: 6px; }
+      .grid-item img { width: 100%; height: 200px; object-fit: contain; border-radius: 4px; }
+      .signature-section { display: flex; justify-content: space-between; margin-top: 30px; border-top: 2px solid #000; padding-top: 20px; }
+      .signature-item { flex: 1; text-align: center; margin: 0 10px; }
+      .signature-line { border-bottom: 1px solid #000; height: 30px; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+      .signature-image { height: auto; max-height: 80px; width: auto; max-width: 200px; border: none; }
+      .page-break { page-break-before: always; }
 
-          <!-- TIME LOGS -->
-          <div class="time-logs">
-            <div class="time-item">
-              <label>Time Jobs Scheduled:</label>
-              <div class="time-picker">
-                <input type="time" class="time-input" value="${clientData.scheduledTime || '09:00'}" />
-                <span class="checkbox"></span>
-                <label>AM</label>
-                <span class="checkbox"></span>
-                <label>PM</label>
-              </div>
-            </div>
-            <div class="time-item">
-              <label>Arrival Time:</label>
-              <div class="time-picker">
-                <input type="time" class="time-input" value="${clientData.arrivalTime || '09:00'}" />
-                <span class="checkbox"></span>
-                <label>AM</label>
-                <span class="checkbox"></span>
-                <label>PM</label>
-              </div>
-            </div>
-            <div class="time-item">
-              <label>Departure Time:</label>
-              <div class="time-picker">
-                <input type="time" class="time-input" value="${clientData.departureTime || '17:00'}" />
-                <span class="checkbox"></span>
-                <label>AM</label>
-                <span class="checkbox"></span>
-                <label>PM</label>
-              </div>
-            </div>
-          </div>
+    </style>
+  </head>
+  <body>
 
-          <!-- HOOD TYPE SECTION -->
-          <div class="section">
-            <div class="section-title">Hood Type</div>
-            <div class="section-content">
-              <div class="form-row">
-                <span class="checkbox ${payload.hoodType?.filter ? 'checked' : ''}"></span>
-                <label>Filter</label>
-                <span class="checkbox ${payload.hoodType?.extractor ? 'checked' : ''}"></span>
-                <label>Extractor</label>
-                <span class="checkbox ${payload.hoodType?.waterWash ? 'checked' : ''}"></span>
-                <label>Water Wash Hood</label>
-              </div>
-              <div class="form-row">
-                <label>Damper operates properly?</label>
-                <span class="checkbox ${payload.damperOperates ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.damperOperates ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.damperOperates ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Filter confirming and in place?</label>
-                <span class="checkbox ${payload.filterConfirming ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.filterConfirming ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.filterConfirming ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="comments">Comments: ${payload.comments?.hoodType || ''}</div>
-            </div>
-          </div>
+    <!-- REPORT HEADER -->
+    <div class="report-header">
+      <div class="header-content">
+        <div class="header-left">
+          <div class="customizable-text">Alberta Hood Cleaning LTD</div>
+          <div class="customizable-text">780-710-2273</div>
+          <div class="customizable-text">albertahooociee.gmail.com</div>
+          <div class="customizable-text">www.alberthoodcleaning.ca</div>
+        </div>
+        <div class="header-center">
+          <img class="logo" src="${logoUrl}" />
+        </div>
+        <div class="header-right">
+          <div class="customizable-text">KITCHEN EXHAUST CLEANING</div>
+          <div class="customizable-text">SERVICE REPORT</div>
+        </div>
+      </div>
 
-          <!-- FAN TYPE SECTION -->
-          <div class="section">
-            <div class="section-title">Fan Type</div>
-            <div class="section-content">
-              <div class="form-row">
-                <span class="checkbox ${payload.fanOptions?.upBlast ? 'checked' : ''}"></span>
-                <label>Up blast</label>
-                <span class="checkbox ${payload.fanOptions?.inLine ? 'checked' : ''}"></span>
-                <label>In-Line</label>
-                <span class="checkbox ${payload.fanOptions?.utility ? 'checked' : ''}"></span>
-                <label>Utility</label>
-                <span class="checkbox ${payload.fanOptions?.directDrive ? 'checked' : ''}"></span>
-                <label>Direct Drive</label>
-              </div>
-              <div class="form-row">
-                <label>Fan Termination:</label>
-                <span class="checkbox ${payload.fanOptions?.roof ? 'checked' : ''}"></span>
-                <label>Roof</label>
-                <span class="checkbox ${payload.fanOptions?.wall ? 'checked' : ''}"></span>
-                <label>Wall</label>
-              </div>
-              <div class="form-row">
-                <label>Fan Belt #:</label>
-                <input type="text" value="${clientData.fanBeltNumber || ''}" />
-              </div>
-              <div class="form-row">
-                <label>Fan type able or interior is accessible:</label>
-                <span class="checkbox ${payload.fanOptions?.fanType ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.fanOptions?.fanType ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.fanOptions?.fanType ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Roof Access:</label>
-                <span class="checkbox ${payload.fanOptions?.roofAccess ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.fanOptions?.roofAccess ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span class="checkbox"></span>
-                <label>Ladder or Lift</label>
-                <input type="text" value="${clientData.ladderOrLift || ''}" style="width: 50px;" />
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.fanOptions?.roofAccess ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="comments">Comments: ${payload.comments?.fanType || ''}</div>
-            </div>
-          </div>
+    <!-- CLIENT & TECHNICIAN INFO TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th colspan="2" style="background:#f0f0f0; padding:5px;">Client & Technician Info</th></tr>
+      <tr>
+        <td style="padding:5px; vertical-align:top;">
+          <div class="form-row"><label>Client:</label><input type="text" value="${clientData.name}" /></div>
+          <div class="form-row"><label>Address:</label><input type="text" value="${clientData.address || ''}" /></div>
+          <div class="form-row"><label>City:</label><input type="text" value="${clientData.city || ''}" /></div>
+          <div class="form-row"><label>State:</label><input type="text" value="${clientData.state || ''}" /></div>
+          <div class="form-row"><label>Zip:</label><input type="text" value="${clientData.zip || ''}" /></div>
+          <div class="form-row"><label>Email:</label><input type="text" value="${clientData.email}" /></div>
+          <div class="form-row"><label>Phone:</label><input type="text" value="${clientData.phone}" /></div>
+        </td>
+        <td style="padding:5px; vertical-align:top;">
+          <div class="form-row"><label>Technician:</label><input type="text" value="${clientData.technician || ''}" /></div>
+          <div class="form-row"><label>Certification:</label><input type="text" value="${clientData.certification || ''}" /></div>
+          <div class="form-row">
+          <label>Service Date:</label>
+          <input type="date" 
+          value="${clientData.serviceDate}" /></div>
+          <div class="form-row"><label>Next Service:</label><input type="date" value="${clientData.nextService}" /></div>
+        </td>
+      </tr>
+    </table>
 
-          <!-- PRE-CLEANING CHECK SECTION -->
-          <div class="section">
-            <div class="section-title">Pre-Cleaning Check</div>
-            <div class="section-content">
-              <div class="form-row">
-                <label>Exhaust Fan Operational</label>
-                <span class="checkbox ${payload.preCheck?.exhaustFanOperational ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.preCheck?.exhaustFanOperational ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.preCheck?.exhaustFanOperational ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Exhaust Fan Noisy/Off Balance</label>
-                <span class="checkbox ${payload.preCheck?.exhaustFanNoisy ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.preCheck?.exhaustFanNoisy ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.preCheck?.exhaustFanNoisy ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Bare or Exposed Wires/Wires Too Short</label>
-                <span class="checkbox ${payload.preCheck?.bareWires ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.preCheck?.bareWires ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.preCheck?.bareWires ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Hinge Kit Needed For Fan</label>
-                <span class="checkbox ${payload.preCheck?.hingeKit ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.preCheck?.hingeKit ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.preCheck?.hingeKit ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Fan Clean Out Port Required</label>
-                <span class="checkbox ${payload.preCheck?.fanCleanOut ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.preCheck?.fanCleanOut ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.preCheck?.fanCleanOut ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Hood Lights Operational</label>
-                <span class="checkbox ${payload.preCheck?.hoodLights ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.preCheck?.hoodLights ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.preCheck?.hoodLights ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Grease Accumulation On Roof</label>
-                <span class="checkbox ${payload.preCheck?.greaseRoof ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.preCheck?.greaseRoof ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.preCheck?.greaseRoof ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="comments">Comments: ${payload.comments?.preCleaning || ''}</div>
-            </div>
-          </div>
+    <!-- TIME LOGS TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th colspan="3" style="background:#f0f0f0; padding:5px;">Time Logs</th></tr>
+      <tr>
+        <td style="padding:5px;"><label>Scheduled Time:</label><input type="time" value="${clientData.scheduledTime || '09:00'}" /></td>
+        <td style="padding:5px;"><label>Arrival Time:</label><input type="time" value="${clientData.arrivalTime || '09:00'}" /></td>
+        <td style="padding:5px;"><label>Departure Time:</label><input type="time" value="${clientData.departureTime || '17:00'}" /></td>
+      </tr>
+    </table>
 
-          <!-- SERVICE PERFORMED SECTION -->
-          <div class="section">
-            <div class="section-title">Service Performed</div>
-            <div class="section-content">
-              <div class="form-row">
-                <label>Hood Cleaned</label>
-                <span class="checkbox ${payload.servicePerformed?.hoodCleaned ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.servicePerformed?.hoodCleaned ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.servicePerformed?.hoodCleaned ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Vertical Duct Cleaned</label>
-                <span class="checkbox ${payload.servicePerformed?.verticalDuct ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.servicePerformed?.verticalDuct ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.servicePerformed?.verticalDuct ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Horizontal Duct Cleaned</label>
-                <span class="checkbox ${payload.servicePerformed?.horizontalDuct ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.servicePerformed?.horizontalDuct ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.servicePerformed?.horizontalDuct ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="comments">Comments: ${payload.comments?.servicePerformed || ''}</div>
-            </div>
-          </div>
+    <!-- HOOD TYPE TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th style="background:#f0f0f0; padding:5px;">Hood Type</th></tr>
+      <tr><td style="padding:5px;">
+        <div class="form-row">
+          <span class="checkbox ${payload.hoodType?.filter ? 'checked' : ''}"></span><label>Filter</label>
+          <span class="checkbox ${payload.hoodType?.extractor ? 'checked' : ''}"></span><label>Extractor</label>
+          <span class="checkbox ${payload.hoodType?.waterWash ? 'checked' : ''}"></span><label>Water Wash Hood</label>
+        </div>
+        <div class="form-row">
+          <label>Damper operates properly?</label>
+          <span class="checkbox ${payload.damperOperates ? 'checked' : ''}"></span><label>Yes</label>
+          <span class="checkbox ${!payload.damperOperates ? 'checked' : ''}"></span><label>No</label>
+          <span style="margin-left: 20px; font-weight:bold;">Answer: ${payload.damperOperates ? 'Yes' : 'No'}</span>
+        </div>
+        <div class="form-row">
+          <label>Filter confirming and in place?</label>
+               <span class="checkbox ${payload.filterConfirming ? 'checked' : ''}"></span><label>Yes</label>
+                <span class="checkbox ${!payload.filterConfirming ? 'checked' : ''}"></span><label>No</label>
+                <span style="margin-left: 20px; font-weight:bold;">Answer: ${payload.filterConfirming ? 'Yes' : 'No'}</span>
+        </div>
+        <div class="comments">Comments: ${payload.comments?.hoodType || ''}</div>
+      </td></tr>
+    </table>
 
-          <!-- AREAS NOT CLEANED SECTION -->
-          <div class="section">
-            <div class="section-title">Areas not Cleaned</div>
-            <div class="section-content">
-              <div class="subsection">
-                <div class="form-row">
-                  <label>Duct:</label>
-                  <span class="checkbox ${payload.ductReasons?.insufficientAccess ? 'checked' : ''}"></span>
-                  <label>Insufficient Access</label>
-                  <span class="checkbox ${payload.ductReasons?.insufficientTime ? 'checked' : ''}"></span>
-                  <label>Insufficient time</label>
-                  <span class="checkbox ${payload.ductReasons?.severeWeather ? 'checked' : ''}"></span>
-                  <label>Severe weather</label>
-                  <span class="checkbox ${payload.ductReasons?.other ? 'checked' : ''}"></span>
-                  <label>Other</label>
-                </div>
-              </div>
-              <div class="subsection">
-                <div class="form-row">
-                  <label>Fan:</label>
-                  <span class="checkbox ${payload.fanReasons?.notAccessible ? 'checked' : ''}"></span>
-                  <label>Unable To Remove/Open Fan</label>
-                  <span class="checkbox ${payload.fanReasons?.insufficientAccess ? 'checked' : ''}"></span>
-                  <label>Insufficient Access</label>
-                  <span class="checkbox ${payload.fanReasons?.insufficientTime ? 'checked' : ''}"></span>
-                  <label>Insufficient time</label>
-                  <span class="checkbox ${payload.fanReasons?.severeWeather ? 'checked' : ''}"></span>
-                  <label>Severe weather</label>
-                  <span class="checkbox ${payload.fanReasons?.other ? 'checked' : ''}"></span>
-                  <label>Other</label>
-                </div>
-              </div>
-              <div class="subsection">
-                <div class="form-row">
-                  <label>Other:</label>
-                  <span class="checkbox ${payload.otherReasons?.insufficientAccess ? 'checked' : ''}"></span>
-                  <label>Insufficient Access</label>
-                  <span class="checkbox ${payload.otherReasons?.insufficientTime ? 'checked' : ''}"></span>
-                  <label>Insufficient time</label>
-                  <span class="checkbox ${payload.otherReasons?.severeWeather ? 'checked' : ''}"></span>
-                  <label>Severe weather</label>
-                  <span class="checkbox ${payload.otherReasons?.other ? 'checked' : ''}"></span>
-                  <label>Other</label>
-                </div>
-              </div>
-              <div class="comments">Comments: ${payload.comments?.areasNotCleaned || ''}</div>
-            </div>
-          </div>
+    <!-- FAN TYPE TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th style="background:#f0f0f0; padding:5px;">Fan Type</th></tr>
+      <tr><td style="padding:5px;">
+        <div class="form-row">
+           <span class="checkbox ${payload.fanOptions?.upBlast ? 'checked' : ''}"></span><label>Up blast</label>
+           <span class="checkbox ${payload.fanOptions?.inLine ? 'checked' : ''}"></span><label>In-Line</label>
+           <span class="checkbox ${payload.fanOptions?.utility ? 'checked' : ''}"></span><label>Utility</label>
+           <span class="checkbox ${payload.fanOptions?.directDrive ? 'checked' : ''}"></span><label>Direct Drive</label>
+        </div>
+        <div class="form-row">
+          <label>Fan Termination:</label>
+          <span class="checkbox ${payload.fanOptions?.roof ? 'checked' : ''}"></span><label>Roof</label>
+      <span class="checkbox ${payload.fanOptions?.wall ? 'checked' : ''}"></span><label>Wall</label>
+      <span style="margin-left: 20px; font-weight:bold;">Answer: ${payload.fanOptions?.roof ? 'Roof' : payload.fanOptions?.wall ? 'Wall' : 'N/A'}</span>
+        </div>
+        <div class="form-row"><label>Fan Belt #:</label><input type="text" value="${clientData.fanBeltNumber || ''}" /></div>
+        <div class="comments">Comments: ${payload.comments?.fanType || ''}</div>
+      </td></tr>
+    </table>
+<div class="page-break"></div>
+    <!-- PRE-CLEANING CHECK TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th style="background:#f0f0f0; padding:5px;">Pre-Cleaning Check</th></tr>
+      <tr><td style="padding:5px;">
+        ${[
+      { label: "Exhaust Fan Operational", key: "exhaustFanOperational" },
+      { label: "Exhaust Fan Noisy/Off Balance", key: "exhaustFanNoisy" },
+      { label: "Bare or Exposed Wires/Wires Too Short", key: "bareWires" },
+      { label: "Hinge Kit Needed For Fan", key: "hingeKit" },
+      { label: "Fan Clean Out Port Required", key: "fanCleanOut" },
+      { label: "Hood Lights Operational", key: "hoodLights" },
+      { label: "Grease Accumulation On Roof", key: "greaseRoof" }
+    ]
+      .map(item => `
+      <div class="form-row">
+        <label>${item.label}</label>
+        <span class="checkbox ${payload.preCheck?.[item.key] ? 'checked' : ''}"></span><label>Yes</label>
+        <span class="checkbox ${!payload.preCheck?.[item.key] ? 'checked' : ''}"></span><label>No</label>
+        <span style="margin-left:20px; font-weight:bold;">Answer: ${payload.preCheck?.[item.key] ? 'Yes' : 'No'}</span>
+      </div>`).join('')}
+       <div class="comments">Comments: ${payload.comments?.preCleaning || ''}</div>
+      </td></tr>
+    </table>
 
-          <!-- POST CLEANING CHECK SECTION -->
-          <div class="section">
-            <div class="section-title">Post Cleaning Check</div>
-            <div class="section-content">
-              <div class="form-row">
-                <label>Any Exhaust System Leaks</label>
-                <span class="checkbox ${payload.postCheck?.leaks ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.leaks ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.leaks ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Exhaust Fan Restarted</label>
-                <span class="checkbox ${payload.postCheck?.fanRestarted ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.fanRestarted ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.fanRestarted ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Pilot Lights Relit</label>
-                <span class="checkbox ${payload.postCheck?.pilotLights ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.pilotLights ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.pilotLights ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Ceiling Tiles Replaced</label>
-                <span class="checkbox ${payload.postCheck?.ceilingTiles ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.ceilingTiles ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.ceilingTiles ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Floors Mopped</label>
-                <span class="checkbox ${payload.postCheck?.floorsMopped ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.floorsMopped ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.floorsMopped ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Water Properly Disposed Of</label>
-                <span class="checkbox ${payload.postCheck?.waterDisposed ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.waterDisposed ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.waterDisposed ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Photos Taken</label>
-                <span class="checkbox ${payload.postCheck?.photosTaken ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.photosTaken ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.photosTaken ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="form-row">
-                <label>Building Properly Secured</label>
-                <span class="checkbox ${payload.postCheck?.buildingSecured ? 'checked' : ''}"></span>
-                <label>Yes</label>
-                <span class="checkbox ${!payload.postCheck?.buildingSecured ? 'checked' : ''}"></span>
-                <label>No</label>
-                <span style="margin-left: 20px; font-weight: bold;">Answer: ${payload.postCheck?.buildingSecured ? 'Yes' : 'No'}</span>
-              </div>
-              <div class="comments">Comments: ${payload.comments?.postCleaning || ''}</div>
-            </div>
-          </div>
+    <!-- SERVICE PERFORMED TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th style="background:#f0f0f0; padding:5px;">Service Performed</th></tr>
+      <tr><td style="padding:5px;">
+       ${[
+      { label: "Hood Cleaned", key: "hoodCleaned" },
+      { label: "Vertical Duct Cleaned", key: "verticalDuct" },
+      { label: "Horizontal Duct Cleaned", key: "horizontalDuct" }
+    ]
+      .map(item => `
+      <div class="form-row">
+        <label>${item.label}</label>
+        <span class="checkbox ${payload.servicePerformed?.[item.key] ? 'checked' : ''}"></span><label>Yes</label>
+        <span class="checkbox ${!payload.servicePerformed?.[item.key] ? 'checked' : ''}"></span><label>No</label>
+        <span style="margin-left:20px; font-weight:bold;">Answer: ${payload.servicePerformed?.[item.key] ? 'Yes' : 'No'}</span>
+      </div>`).join('')}
+    <div class="comments">Comments: ${payload.comments?.servicePerformed || ''}</div>
+      </td></tr>
+    </table>
 
-          <!-- SELECTED SERVICES SECTION -->
-          ${renderSelectedServices(payload.selectedServices)}
+    <!-- AREAS NOT CLEANED TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th style="background:#f0f0f0; padding:5px;">Areas Not Cleaned</th></tr>
+      <tr><td style="padding:5px;">
+        <div class="form-row"><label>Duct:</label><span class="checkbox ${payload.ductReasons?.insufficientAccess ? 'checked' : ''}"></span>Insufficient Access
+        <span class="checkbox ${payload.ductReasons?.insufficientTime ? 'checked' : ''}"></span>Insufficient Time
+        <span class="checkbox ${payload.ductReasons?.severeWeather ? 'checked' : ''}"></span>Severe Weather
+        <span class="checkbox ${payload.ductReasons?.other ? 'checked' : ''}"></span>Other
+        </div>
+        <div class="form-row"><label>Fan:</label>
+        <span class="checkbox ${payload.fanReasons?.notAccessible ? 'checked' : ''}"></span>Unable To Remove/Open
+        <span class="checkbox ${payload.fanReasons?.insufficientAccess ? 'checked' : ''}"></span>Insufficient Access
+        <span class="checkbox ${payload.fanReasons?.insufficientTime ? 'checked' : ''}"></span>Insufficient Time
+        <span class="checkbox ${payload.fanReasons?.severeWeather ? 'checked' : ''}"></span>Severe Weather
+        <span class="checkbox ${payload.fanReasons?.other ? 'checked' : ''}"></span>Other
+        </div>
+        <div class="form-row"><label>Other:</label>
+        <span class="checkbox ${payload.otherReasons?.insufficientAccess ? 'checked' : ''}"></span>Insufficient Access
+        <span class="checkbox ${payload.otherReasons?.insufficientTime ? 'checked' : ''}"></span>Insufficient Time
+        <span class="checkbox ${payload.otherReasons?.severeWeather ? 'checked' : ''}"></span>Severe Weather
+        <span class="checkbox ${payload.otherReasons?.other ? 'checked' : ''}"></span>Other
+        </div>
+        <div class="comments">Comments: ${payload.comments?.areasNotCleaned || ''}</div>
+      </td></tr>
+    </table>
 
-          <!-- PHOTOS SECTION -->
-          ${beforeList.length > 0 ? renderGrid('Before Photos', beforeList) : ''}
-          ${payload.selectedServices?.includes('exhaust') && exhaustList.length > 0 ? renderGrid('Photos', exhaustList, 'Exhaust Fan') : ''}
-          ${payload.selectedServices?.includes('duct') && ductList.length > 0 ? renderGrid('Photos', ductList, 'Duct Fan') : ''}
-          ${payload.selectedServices?.includes('canopy') && canopyList.length > 0 ? renderGrid('Photos', canopyList, 'Canopy') : ''}
-          
-          <!-- PAGE NUMBER -->
-          <div class="page-number">1 of 2</div>
-          
-          <!-- PAGE BREAK FOR AFTER PHOTOS -->
-          <div class="page-break"></div>
-          
-          <!-- AFTER PHOTOS SECTION (PAGE 2) -->
-          ${afterList.length > 0 ? renderGrid('After Photos', afterList) : ''}
-          
-          <!-- SIGNATURE SECTION -->
+    <!-- POST-CLEANING CHECK TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th style="background:#f0f0f0; padding:5px;">Post Cleaning Check</th></tr>
+      <tr><td style="padding:5px;">
+         ${[
+      { label: "Any Exhaust System Leaks", key: "leaks" },
+      { label: "Exhaust Fan Restarted", key: "fanRestarted" },
+      { label: "Pilot Lights Relit", key: "pilotLights" },
+      { label: "Ceiling Tiles Replaced", key: "ceilingTiles" },
+      { label: "Floors Mopped", key: "floorsMopped" },
+      { label: "Water Properly Disposed Of", key: "waterDisposed" },
+      { label: "Photos Taken", key: "photosTaken" },
+      { label: "Building Properly Secured", key: "buildingSecured" }
+    ]
+      .map(item => `
+      <div class="form-row">
+        <label>${item.label}</label>
+        <span class="checkbox ${payload.postCheck?.[item.key] ? 'checked' : ''}"></span><label>Yes</label>
+        <span class="checkbox ${!payload.postCheck?.[item.key] ? 'checked' : ''}"></span><label>No</label>
+        <span style="margin-left:20px; font-weight:bold;">Answer: ${payload.postCheck?.[item.key] ? 'Yes' : 'No'}</span>
+      </div>`).join('')}
+    <div class="comments">Comments: ${payload.comments?.postCleaning || ''}</div>
+      </td></tr>
+    </table>
+<div class="page-break"></div>
+   <!-- PHOTOS TABLE -->
+<table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+  <tr><th style="background:#f0f0f0; padding:5px;">Photos</th></tr>
+  <tr><td style="padding:5px;">
+    <!-- PHOTOS SECTION -->
+        ${beforeList.length > 0 ? renderGrid('Before Photos', beforeList) : ''}
+        ${payload.selectedServices?.includes('exhaust') && exhaustList.length > 0 ? renderGrid('Photos', exhaustList, 'Exhaust Fan') : ''}
+        ${payload.selectedServices?.includes('duct') && ductList.length > 0 ? renderGrid('Photos', ductList, 'Duct Fan') : ''}
+        ${payload.selectedServices?.includes('canopy') && canopyList.length > 0 ? renderGrid('Photos', canopyList, 'Canopy') : ''}
+
+        <!-- PAGE NUMBER -->
+
+      
+
+        <!-- AFTER PHOTOS SECTION (PAGE 2) -->
+        ${afterList.length > 0 ? renderGrid('After Photos', afterList) : ''}
+      </td></tr>
+    </table>
+
+
+    <!-- SIGNATURES TABLE -->
+    <table style="width:100%; border:1px solid #000; margin-bottom:20px; border-collapse: collapse;">
+      <tr><th colspan="2" style="background:#f0f0f0; padding:5px;">Signatures</th></tr>
+      <tr>
+        <td style="padding:5px; vertical-align:top;">
           <div class="signature-section">
             <div class="signature-item">
-              <label>Owner Representative:</label>
-              <div class="signature-line">${clientData.ownerRepresentative || ''}</div>
+                <label>Signature client:</label>
+                <div class="signature-line">${clientData.signature || ''}</div>
             </div>
             <div class="signature-item">
-              <label>Signature:</label>
-              <div class="signature-line">${clientData.signature || ''}</div>
+                <label>Signature technician:</label>
+                <div class="signature-line">${clientData.ownerRepresentative || '' }</div>
             </div>
-            <div class="signature-item">
-              <label>Date:</label>
-              <div class="signature-line">${clientData.reportDate || ''}</div>
-            </div>
+             <div class="signature-item">
+                <label>date:</label>
+                <div class="signature-line">${clientData.reportDate || '' }</div>
+            </div> 
           </div>
-          
-          <!-- DISCLAIMER -->
-          <div class="disclaimer">
-            <p><strong>DISCLAIMER:</strong> This report is provided as a service to our customers. The information contained herein is based on observations made during the service visit. While we strive for accuracy, we cannot guarantee that all conditions were identified or that all recommendations will resolve all issues. Customers are advised to consult with qualified professionals for any concerns regarding their exhaust systems. This report does not constitute a warranty or guarantee of any kind.</p>
-          </div>
-          
-          <!-- PAGE NUMBER -->
-          <div class="page-number">2 of 2</div>
-        </body>
-      </html>
+        </td>
+      </tr>
+    </table>
+
+    <!-- DISCLAIMER -->
+    <div class="disclaimer">
+      This report is based on visual observations and the conditions at the time of service. It is not a guarantee of cleanliness or safety, and does not replace regular maintenance, inspections, or compliance with local fire and safety codes. Always follow your facility's guidelines and consult certified professionals for comprehensive safety evaluations.
+    </div>
+
+    <div class="page-number">Page 3</div>
+  </body>
+</html>
+
     `;
 
     const { uri } = await Print.printToFileAsync({
       html: htmlContent,
-      base64: false,
+    
     });
 
     console.log('PDF generated successfully:', uri);

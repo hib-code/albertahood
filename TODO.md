@@ -1,0 +1,2 @@
+- [ ] Update initial serviceDate in clientData state to use ISO format (YYYY-MM-DD)
+- [ ] Update serviceDate in resetForm function to use ISO format
