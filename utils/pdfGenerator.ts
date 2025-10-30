@@ -57,7 +57,7 @@ const loadLogoBase64 = async (): Promise<string | null> => {
 //-----------------------------
 // supabase
 // ----------------------------
-const logoUrl = 'https://glulvpwfoubliscogfso.supabase.co/storage/v1/object/public/img/Logo.png';
+const logoUrl = 'https://wxrnyarkeftslssfwvhr.supabase.co/storage/v1/object/public/logo/Logo.png';
 // ----------------------------
 // Fonction pour encoder une photo
 // ----------------------------

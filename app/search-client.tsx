@@ -27,6 +27,8 @@ export default function SearchClientScreen() {
 
   const [selectedClient, setSelectedClient] = useState<ClientData | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [viewModalVisible, setViewModalVisible] = useState(false);
+  const [viewClient, setViewClient] = useState<ClientData | null>(null);
 
   // Charger les rapports depuis AsyncStorage au démarrage
   useEffect(() => {
@@ -95,13 +97,56 @@ export default function SearchClientScreen() {
     }
   };
 
+  // Ajout des handlers d'édition et suppression
+  const handleEditClient = (client: ClientData) => {
+    router.push({
+      pathname: '/new-report',
+      params: {
+        client: JSON.stringify(client),
+        originalEmail: client.email,
+        originalName: client.name,
+        originalAddress: client.address,
+        originalCity: client.city,
+        originalPhone: client.phone,
+        originalZip: client.zip,
+      },
+    });
+  };
+
+  const handleDeleteClient = (client: ClientData) => {
+    import('react-native').then(({ Alert }) => {
+      Alert.alert('Delete', 'Confirm the deletion of this client?', [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const reportsJson = await AsyncStorage.getItem('reports');
+              let reports: ReportPayload[] = reportsJson ? JSON.parse(reportsJson) : [];
+              reports = reports.filter(
+                r => !(r.clientData.email === client.email && r.clientData.name === client.name)
+              );
+              await AsyncStorage.setItem('reports', JSON.stringify(reports));
+              setAllReports(reports);
+              setFilteredReports(reports);
+            } catch (e) {
+              Alert.alert('Erreur', 'Error deleting');
+            }
+          },
+        },
+      ]);
+    });
+  };
+
+  const handleViewClient = (client: ClientData) => {
+    setViewClient(client);
+    setViewModalVisible(true);
+  };
+
   // Render client item
   const renderClientItem = ({ item }: { item: ClientData }) => (
-    <TouchableOpacity
-      style={styles.clientItem}
-      onPress={() => handleClientSelect(item)}
-      activeOpacity={0.7}
-    >
+    <View style={styles.clientItem}>
       <View style={styles.clientInfo}>
         <View style={styles.clientHeader}>
           <Text style={styles.clientName}>{item.name}</Text>
@@ -113,7 +158,21 @@ export default function SearchClientScreen() {
           <Text style={styles.clientAdditional}>{item.additionalInfo}</Text>
         )}
       </View>
-    </TouchableOpacity>
+      <View style={{ flexDirection: 'row', marginTop: 8, justifyContent: 'flex-end' }}>
+        <TouchableOpacity style={{ marginRight: 12 }} onPress={() => handleViewClient(item)}>
+          <Text style={{ color: colors.primary }}>To see</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={{ marginRight: 12 }} onPress={() => handleEditClient(item)}>
+          <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={{ marginRight: 12 }} onPress={() => exportClientPDF(item)}>
+          <Text style={{ color: 'orange', fontWeight: 'bold' }}>PDF</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleDeleteClient(item)}>
+          <Text style={{ color: 'red', fontWeight: 'bold' }}>Delete</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   return (
@@ -170,7 +229,7 @@ export default function SearchClientScreen() {
               <Text style={styles.modalTitle}>Export PDF Report</Text>
               {selectedClient && (
                 <Text style={styles.modalText}>
-                  Voulez-vous générer un PDF pour{" "}
+                  Do you want to generate a PDF for{" "}
                   <Text style={{ fontWeight: "bold" }}>{selectedClient.name}</Text> ?
                 </Text>
               )}
@@ -185,16 +244,40 @@ export default function SearchClientScreen() {
                     setModalVisible(false);
                   }}
                 >
-                  <Text style={styles.modalButtonText}>Télécharger PDF</Text>
+                  <Text style={styles.modalButtonText}>Download PDF</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={[styles.modalButton, { backgroundColor: colors.border }]}
                   onPress={() => setModalVisible(false)}
                 >
-                  <Text style={styles.modalButtonText}>Annuler</Text>
+                  <Text style={styles.modalButtonText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal d’aperçu client simple */}
+        <Modal visible={viewModalVisible} transparent animationType="fade" onRequestClose={() => setViewModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Client Details</Text>
+              {viewClient && (
+                <View>
+                  <Text style={{ marginBottom: 4 }}><Text style={{ fontWeight: 'bold' }}>Nom :</Text> {viewClient.name}</Text>
+                  <Text style={{ marginBottom: 4 }}><Text style={{ fontWeight: 'bold' }}>Email :</Text> {viewClient.email}</Text>
+                  <Text style={{ marginBottom: 4 }}><Text style={{ fontWeight: 'bold' }}>Téléphone :</Text> {viewClient.phone}</Text>
+                  {viewClient.address && (
+                    <Text style={{ marginBottom: 4 }}><Text style={{ fontWeight: 'bold' }}>Adresse :</Text> {viewClient.address}</Text>
+                  )}
+                  {viewClient.city && (
+                    <Text style={{ marginBottom: 4 }}><Text style={{ fontWeight: 'bold' }}>Ville :</Text> {viewClient.city}</Text>
+                  )}
+                  {/* Ajoute d'autres infos si tu veux */}
+                </View>
+              )}
+              <Button text="Fermer" onPress={() => setViewModalVisible(false)} style={{ marginTop: 16 }} />
             </View>
           </View>
         </Modal>

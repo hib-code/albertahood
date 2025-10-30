@@ -8,6 +8,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -26,8 +27,10 @@ import Signature from 'react-native-signature-canvas';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function NewReportScreen() {
+  const params = useLocalSearchParams();
   
 
 
@@ -194,6 +197,9 @@ export default function NewReportScreen() {
   const [departureTime, setDepartureTime] = useState(new Date());
   const [scheduledTime, setScheduledTime] = useState(new Date());
 
+  // déclaration du state si pas déjà fait
+  const [showReportDatePicker, setShowReportDatePicker] = useState(false);
+
   // -------------------- FUNCTIONS --------------------
   const updateClientData = (field: keyof ClientData, value: any) => {
     setClientData((prev) => ({
@@ -207,7 +213,7 @@ export default function NewReportScreen() {
       setShowDatePicker(false);
       if (selectedDate) {
         setCurrentDate(selectedDate);
-        updateClientData('serviceDate', selectedDate.toISOString().split('T')[0]); // format YYYY-MM-DD
+        updateClientData('serviceDate', selectedDate.toISOString().split('T')[0]); 
       }
     };
 
@@ -262,7 +268,51 @@ export default function NewReportScreen() {
 
     return true;
   };
+//code sugestion
 
+const [storedClients, setStoredClients] = useState<ClientData[]>([]);
+const [filteredClients, setFilteredClients] = useState<ClientData[]>([]);
+const [showSuggestions, setShowSuggestions] = useState(false);
+
+// Fonction utilitaire pour recharger la liste des clients stockés
+const reloadStoredClients = async () => {
+  const data = await AsyncStorage.getItem('reports');
+  if (data) {
+    const reports = JSON.parse(data);
+    const uniqueClients = Array.from(
+      new Map(
+        reports.map((r: any) => {
+          const client = (r.clientData || r) as ClientData;
+          return [client.name, client];
+        })
+      ).values()
+    );
+    console.log('reloadStoredClients (unique clients)', uniqueClients);
+    setStoredClients(uniqueClients as ClientData[]);
+  }
+};
+
+const handleClientNameChange = (text: string) => {
+  updateClientData('name', text);
+  const criteria = text.trim().toLowerCase();
+  const results = !criteria
+    ? storedClients          
+    : storedClients.filter(c => c.name && c.name.toLowerCase().includes(criteria));
+  console.log('handleClientNameChange text:', text);
+  console.log('storedClients:', storedClients);
+  console.log('filtered results:', results);
+  setFilteredClients(results);
+  setShowSuggestions(results.length > 0);
+};
+
+const handleClientSelect = (client: ClientData) => {
+  (Object.keys(client) as (keyof ClientData)[]).forEach((key) => {
+    updateClientData(key, client[key]);
+  });
+  setShowSuggestions(false);
+  setFilteredClients([]);
+};
+//fin
  
 
 
@@ -316,19 +366,16 @@ export default function NewReportScreen() {
 
 const handleSaveToAsyncStorage = async () => {
   try {
-    // Récupérer les rapports existants
     const existingReportsJson = await AsyncStorage.getItem('reports');
-    const existingReports = existingReportsJson ? JSON.parse(existingReportsJson) : [];
-
-    // Ajouter le nouveau rapport
-    const newReport = {
+    let existingReports = existingReportsJson ? JSON.parse(existingReportsJson) : [];
+    let newReport = {
       clientData,
       beforePhotos,
       afterPhotos,
       exhaustFanPhotos,
       ductFanPhotos,
       canopyPhotos,
-      selectedServices: selectedCategories, // Ajouter les services sélectionnés
+      selectedServices: selectedCategories,
       hoodType,
       damperOperates,
       filterConfirming,
@@ -343,17 +390,48 @@ const handleSaveToAsyncStorage = async () => {
       comments,
       createdAt: new Date().toISOString(),
     };
-
+    if (params.client) {
+      const clientObj = JSON.parse(Array.isArray(params.client) ? params.client[0] : params.client as string);
+      const filterEmail = params.originalEmail || clientObj.email;
+      const filterName = params.originalName || clientObj.name;
+      const filterAddress = params.originalAddress || clientObj.address;
+      const filterCity = params.originalCity || clientObj.city;
+      const filterPhone = params.originalPhone || clientObj.phone;
+      const filterZip = params.originalZip || clientObj.zip;
+      existingReports = existingReports.filter((r: any) =>
+        !(r.clientData.email === filterEmail &&
+          r.clientData.name === filterName &&
+          r.clientData.address === filterAddress &&
+          r.clientData.city === filterCity &&
+          r.clientData.phone === filterPhone &&
+          r.clientData.zip === filterZip)
+      );
+    }
     const updatedReports = [...existingReports, newReport];
-
-    // Enregistrer dans AsyncStorage
     await AsyncStorage.setItem('reports', JSON.stringify(updatedReports));
-
-    Alert.alert('Succès', 'Données enregistrées localement !');
-
-    // Réinitialiser le formulaire
+    Alert.alert(
+      'Succès',
+      params.client ? 'Modified client !' : 'Created !',
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (params.client) {
+              router.replace('/search-client');
+            }
+          },
+        },
+      ]
+    );
     resetForm();
-
+    setShowSuggestions(false);
+    setFilteredClients([]);
+    await reloadStoredClients();
+    if (params.client) {
+      setTimeout(() => {
+        router.replace('/search-client');
+      }, 1300);
+    }
   } catch (error) {
     console.error('Erreur AsyncStorage:', error);
     Alert.alert('Erreur', 'Impossible d’enregistrer les données. Réessayez.');
@@ -372,19 +450,19 @@ const resetForm = () => {
     zip: '',
     technician: 'Anoir Boukhriss',
     certification: '#AB159.1',
-    serviceDate: new Date().toLocaleDateString(),
+    serviceDate: new Date().toISOString().split('T')[0],
     nextService: '',
     scheduledTime: '',
     arrivalTime: '',
     departureTime: '01:30',
     additionalInfo: '',
-    beforePhoto: undefined,
-    afterPhoto: undefined,
+    beforePhoto: '',
+    afterPhoto: '',
     fanBeltNumber: '',
     ladderOrLift: '27 FT',
     ownerRepresentative: 'Lee',
     signature: 'N/A',
-    reportDate: '22 August 2025',
+    reportDate: new Date().toISOString().split('T')[0],
     questions: {
       improvements: '',
       satisfaction: '',
@@ -392,34 +470,22 @@ const resetForm = () => {
       additionalFeedback: '',
     },
   });
-  setHoodType({ filter: false, extractor: false, waterWash: false });
-  setBeforePhotos([]);
-  setAfterPhotos([]);
-  setExhaustFanPhotos([]);
-  setDuctFanPhotos([]);
-  setCanopyPhotos([]);
-  setSelectedCategories([]);
-  setDamperOperates(false);
-  setFilterConfirming(false);
-  setPreCheck({
-    exhaustFanOperational: false,
-    exhaustFanNoisy: false,
-    bareWires: false,
-    hingeKit: false,
-    fanCleanOut: false,
-    hoodLights: false,
-    greaseRoof: false,
-  });
-  setServicePerformed({ hoodCleaned: false, verticalDuct: false, horizontalDuct: false });
-  setNotCleaned({ duct: false, fan: false, other: false });
-  setDuctReasons({ insufficientAccess: false, severeWeather: false, insufficientTime: false, other: false });
-  setFanReasons({ insufficientAccess: false, severeWeather: false, insufficientTime: false, mechanicalIssue: false, notAccessible: false, other: false });
-  setOtherReasons({ insufficientAccess: false, severeWeather: false, insufficientTime: false, other: false });
-  setPostCheck({ leaks: false, fanRestarted: false, pilotLights: false, ceilingTiles: false, floorsMopped: false, waterDisposed: false, photosTaken: false, buildingSecured: false });
-  setComments({ hoodType: '', fanType: '', preCleaning: '', servicePerformed: '', areasNotCleaned: '', postCleaning: '' });
+  setShowSuggestions(false);
+  setFilteredClients([]);
+  // Tu peux remonter scroll si tu as une ref sur ScrollView ici !
 };
 
   // -------------------- RENDER --------------------
+  React.useEffect(() => {
+    if (params.client) {
+      try {
+        const clientObj = JSON.parse(Array.isArray(params.client) ? params.client[0] : params.client as string);
+        setClientData(prev => ({ ...prev, ...clientObj }));
+        setShowSuggestions(false);
+        setFilteredClients([]);
+      } catch {}
+    }
+  }, [params.client]);
   return (
     <SafeAreaView style={commonStyles.container}>
       {/* Header */}
@@ -444,10 +510,28 @@ const resetForm = () => {
           <FormInput
             label="Client Name"
             value={clientData.name}
-            onChangeText={(text) => updateClientData('name', text)}
+            onChangeText={handleClientNameChange}
             placeholder="Enter client name"
             required
           />
+          {showSuggestions && filteredClients.length > 0 && (
+            <View style={{
+              backgroundColor: '#fff',
+              borderWidth: 1,
+              borderColor: '#ccc',
+              borderRadius: 7,
+              marginBottom: 12,
+            }}>
+              {filteredClients.map((client, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleClientSelect(client)}
+                  style={{ padding: 10, borderBottomWidth: idx < filteredClients.length-1 ? 1 : 0, borderColor: '#eee' }}>
+                  <Text>{client.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <FormInput
             label="Address"
             value={clientData.address || ''}
@@ -1060,37 +1144,61 @@ const resetForm = () => {
           />
 
       {/* Champ Date */}
-      <FormInput
-        label="Date:"
-        value={clientData.reportDate || ''}
-        onChangeText={(text) => updateClientData('reportDate', text)}
-        placeholder="Enter date"
-      />
+      <Text style={{ marginBottom: 5 }}>Date:</Text>
+      <TouchableOpacity
+        onPress={() => setShowReportDatePicker(true)}
+        style={{
+          padding: 12,
+          borderWidth: 1,
+          borderColor: '#ccc',
+          borderRadius: 5,
+          marginBottom: 10,
+          backgroundColor: 'white'
+        }}
+      >
+        <Text style={{ color: clientData.reportDate ? '#111' : '#aaa' }}>
+          {clientData.reportDate || 'Select date'}
+        </Text>
+      </TouchableOpacity>
+      {showReportDatePicker && (
+        <DateTimePicker
+          value={clientData.reportDate && !isNaN(new Date(clientData.reportDate).getTime())?
+            new Date(clientData.reportDate) : new Date()}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowReportDatePicker(false);
+            if (selectedDate) {
+              updateClientData('reportDate', selectedDate.toISOString().split('T')[0]);
+            }
+          }}
+        />
+      )}
     </View>
 
 
         {/* Export PDF */}
-     <View style={styles.actionSection}>
+     <View style={styles.buttonRow}>
           <Button
-              text="Enregistrer localement"
-              onPress={handleSaveToAsyncStorage}
-              style={[styles.exportButton]}
-              textStyle={styles.exportButtonText}
-            />
+            text="registre"
+            onPress={handleSaveToAsyncStorage}
+            style={{flex:1, marginRight: 10, backgroundColor: colors.primary, borderRadius: 16}}
+            textStyle={{color: '#fff', fontWeight: '700'}}
+          />
 
           <Button
-            text={isGenerating ? 'Generating PDF...' : 'Export PDF Report'}
+            text={isGenerating ? 'Génération...' : 'Exporte PDF'}
             onPress={handleExportPDF}
-            style={isGenerating ? [styles.exportButton, styles.disabledButton] : styles.exportButton}
-            textStyle={styles.exportButtonText}
+            style={{flex:1, backgroundColor: colors.success, borderRadius: 16}}
+            textStyle={{color: '#fff', fontWeight: '700'}}
             disabled={isGenerating}
           />
-          {generatedPdfUri && (
+        </View>
+        {generatedPdfUri && (
             <View style={styles.successSection}>
               <Text style={styles.successText}>✓ PDF Report Generated Successfully</Text>
             </View>
           )}
-        </View>
       </ScrollView>
 
       {/* Date and Time Pickers */}
@@ -1138,6 +1246,12 @@ const resetForm = () => {
           onChange={onDepartureTimeChange}
         />
       )}
+      {isGenerating && (
+  <View style={styles.loadingOverlay}>
+    <ActivityIndicator color={colors.primary} style={styles.spinner} size="large" />
+    <Text style={{marginTop:12, color:colors.primary}}>Génération du PDF...</Text>
+  </View>
+)}
     </SafeAreaView>
   );
 }
@@ -1160,30 +1274,41 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     backgroundColor: '#fff',
     padding: 10,
-    margin: 5, // fusionne les propriétés ici
+    margin: 5, 
   },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 20,
-    borderLeftWidth: 4,
+    fontWeight: 'bold',
+    color: colors.primary,
+    backgroundColor: '#F5F8FF',
+    paddingVertical: 10,
+    paddingLeft: 12,
+    borderLeftWidth: 5,
     borderLeftColor: colors.primary,
-    paddingLeft: 16,
+    borderRadius: 8,
+    marginBottom: 20,
   },
   input: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 16,
+    borderColor: '#e2e8f0',
     borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 8,
-    marginVertical: 5,
-    borderRadius: 5,
+    fontSize: 16,
   },
   actionSection: { marginTop: 20, marginBottom: 40 },
   exportButton: { backgroundColor: colors.primary, paddingVertical: 16, marginBottom: 20 },
   exportButtonText: { fontSize: 18, fontWeight: '600' },
   disabledButton: { backgroundColor: colors.textSecondary },
   successSection: { alignItems: 'center' },
-  successText: { fontSize: 16, fontWeight: '600', color: colors.success, textAlign: 'center' },
+  successText: {
+    color: colors.success,
+    fontWeight: 'bold',
+    fontSize: 18,
+    textAlign: 'center',
+    marginTop: 12
+  },
   categorySelector: { marginBottom: 20 },
   categoryButton: { borderColor: colors.primary },
   categoryButtonContent: { paddingVertical: 8 },
@@ -1246,5 +1371,22 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    marginBottom: 30,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(60,60,60,.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2000,
+  },
+  spinner: {
+    width: 48,
+    height: 48,
   },
 });
