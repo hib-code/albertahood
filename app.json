@@ -41,6 +41,8 @@
       "typedRoutes": true
     },
     "extra": {
+      "EXPO_PUBLIC_SUPABASE_URL": "https://zmxbkuirkyjmdyoxppms.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpteGJrdWlya3lqbWR5b3hwcG1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5MjI3NzcsImV4cCI6MjA3NzQ5ODc3N30.86MqHtH-uuGc9S1zL00_FOpVfv6QQT034gEd-cSmreo",
       "router": {},
       "eas": {
         "projectId": "563ee88f-c96c-45bb-a87f-59052f617787"

@@ -28,6 +28,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 import { useLocalSearchParams } from 'expo-router';
+import { supabase } from '../lib/supabase';
 
 export default function NewReportScreen() {
   const params = useLocalSearchParams();
@@ -69,6 +70,7 @@ export default function NewReportScreen() {
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSavingOnline, setIsSavingOnline] = useState(false);
   const [generatedPdfUri, setGeneratedPdfUri] = useState<string | null>(null);
   const [beforePhotos, setBeforePhotos] = useState<string[]>([]);
   const [afterPhotos, setAfterPhotos] = useState<string[]>([]);
@@ -417,7 +419,7 @@ const handleSaveToAsyncStorage = async () => {
           text: 'OK',
           onPress: () => {
             if (params.client) {
-              router.replace('/search-client');
+              router.replace('/search-client?refresh=1');
             }
           },
         },
@@ -429,12 +431,183 @@ const handleSaveToAsyncStorage = async () => {
     await reloadStoredClients();
     if (params.client) {
       setTimeout(() => {
-        router.replace('/search-client');
+        router.replace('/search-client?refresh=1');
       }, 1300);
     }
   } catch (error) {
-    console.error('Erreur AsyncStorage:', error);
-    Alert.alert('Erreur', 'Impossible d’enregistrer les données. Réessayez.');
+    console.error('AsyncStorage error:', error);
+    Alert.alert('Error', 'Unable to save data. Please try again.');
+  }
+};
+
+// Upload helpers for React Native (file://, content://, or data URLs)
+const base64ToUint8Array = (base64: string) => {
+  const binaryString = global.atob ? global.atob(base64) : Buffer.from(base64, 'base64').toString('binary');
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+  return bytes;
+};
+
+const pickContentType = (uri: string) => {
+  if (uri.startsWith('data:image/')) {
+    const match = uri.match(/^data:(.*?);/);
+    return match ? match[1] : 'image/jpeg';
+  }
+  if (uri.endsWith('.png')) return 'image/png';
+  if (uri.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+};
+
+const readAsUint8Array = async (uri: string): Promise<Uint8Array | null> => {
+  try {
+    if (uri.startsWith('data:')) {
+      const base64 = uri.split(',')[1] || '';
+      return base64ToUint8Array(base64);
+    }
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return null;
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
+    return base64ToUint8Array(base64);
+  } catch (e) {
+    console.warn('readAsUint8Array error', e);
+    return null;
+  }
+};
+
+// Upload a single URI to Supabase Storage and return the public URL
+const uploadFileToStorage = async (bucket: string, uri: string, folder: string) => {
+  try {
+    if (!uri) return null;
+    const contentType = pickContentType(uri);
+    const bytes = await readAsUint8Array(uri);
+    if (!bytes) return null;
+    const filePath = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}${contentType === 'image/png' ? '.png' : '.jpg'}`;
+
+    const { error } = await supabase.storage.from(bucket).upload(filePath, bytes, {
+      contentType,
+      upsert: false,
+    });
+    if (error) {
+      console.warn('Storage upload error:', error.message);
+      return null;
+    }
+    const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
+    return data.publicUrl;
+  } catch (e) {
+    console.warn('Storage upload exception:', e);
+    return null;
+  }
+};
+
+// Upload arrays and single media; return map of public URLs
+const uploadMedia = async () => {
+  const bucket = 'reports';
+  const folderBase = `report_${Date.now()}`;
+  const mapUpload = async (uris: string[], sub: string) => {
+    const results = await Promise.all(
+      (uris || []).map(async (u) => {
+        if (typeof u === 'string' && /^https?:\/\//i.test(u)) {
+          // Already online URL → keep as-is
+          return u;
+        }
+        return await uploadFileToStorage(bucket, u, `${folderBase}/${sub}`);
+      })
+    );
+    return results.filter(Boolean) as string[];
+  };
+  const uploadedBefore = await mapUpload(beforePhotos, 'before');
+  const uploadedAfter = await mapUpload(afterPhotos, 'after');
+  const uploadedExhaust = await mapUpload(exhaustFanPhotos, 'exhaustFan');
+  const uploadedDuctFan = await mapUpload(ductFanPhotos, 'ductFan');
+  const uploadedCanopy = await mapUpload(canopyPhotos, 'canopy');
+
+  const singleBefore = clientData.beforePhoto
+    ? (/^https?:\/\//i.test(clientData.beforePhoto)
+        ? clientData.beforePhoto
+        : await uploadFileToStorage(bucket, clientData.beforePhoto, `${folderBase}/single`))
+    : null;
+  const singleAfter = clientData.afterPhoto
+    ? (/^https?:\/\//i.test(clientData.afterPhoto)
+        ? clientData.afterPhoto
+        : await uploadFileToStorage(bucket, clientData.afterPhoto, `${folderBase}/single`))
+    : null;
+  const signatureUrl = clientData.signature
+    ? (clientData.signature.startsWith('data:')
+        ? await uploadFileToStorage(bucket, clientData.signature, `${folderBase}/signature`)
+        : /^https?:\/\//i.test(clientData.signature) ? clientData.signature : null)
+    : null;
+
+  return {
+    beforePhotos: uploadedBefore,
+    afterPhotos: uploadedAfter,
+    exhaustFanPhotos: uploadedExhaust,
+    ductFanPhotos: uploadedDuctFan,
+    canopyPhotos: uploadedCanopy,
+    beforePhoto: singleBefore,
+    afterPhoto: singleAfter,
+    signature: signatureUrl,
+  };
+};
+
+const handleSaveToSupabase = async () => {
+  if (isSavingOnline) return;
+  setIsSavingOnline(true);
+  try {
+    // Upload images and signature to storage
+    const uploaded = await uploadMedia();
+
+    const record = {
+      clientData,
+      selectedServices: selectedCategories,
+      hoodType,
+      damperOperates,
+      filterConfirming,
+      fanOptions,
+      preCheck,
+      servicePerformed,
+      notCleaned,
+      ductReasons,
+      fanReasons,
+      otherReasons,
+      postCheck,
+      comments,
+      photos: uploaded,
+      createdAt: new Date().toISOString(),
+    };
+
+    const supabaseId = (params as any).supabaseId as string | undefined;
+    console.log('Saving with supabaseId:', supabaseId);
+    if (supabaseId && supabaseId.trim()) {
+      const { error } = await supabase.from('reports').update({ data: record }).eq('id', supabaseId);
+      if (error) {
+        console.error('Update error:', error);
+        throw error;
+      }
+      Alert.alert('Success', 'Updated online!');
+      try { router.replace('/search-client'); } catch {}
+    } else {
+      const { error } = await supabase.from('reports').insert([{ data: record }]);
+      if (error) {
+        console.error('Insert error:', error);
+        throw error;
+      }
+      Alert.alert('Success', 'Created online!');
+    }
+
+    // Optional: keep local backup
+    try {
+      const existingReportsJson = await AsyncStorage.getItem('reports');
+      const existingReports = existingReportsJson ? JSON.parse(existingReportsJson) : [];
+      await AsyncStorage.setItem('reports', JSON.stringify([...existingReports, record]));
+    } catch {}
+
+    resetForm();
+  } catch (e: any) {
+    console.error('Supabase save error:', e?.message || e);
+    Alert.alert('Error', 'Online save failed. Please try again.');
+  } finally {
+    setIsSavingOnline(false);
   }
 };
 
@@ -474,9 +647,11 @@ const resetForm = () => {
   setFilteredClients([]);
   // Tu peux remonter scroll si tu as une ref sur ScrollView ici !
 };
-
+//
   // -------------------- RENDER --------------------
   React.useEffect(() => {
+    console.log('Params received:', { client: !!params.client, report: !!(params as any).report, supabaseId: (params as any).supabaseId });
+    
     if (params.client) {
       try {
         const clientObj = JSON.parse(Array.isArray(params.client) ? params.client[0] : params.client as string);
@@ -485,7 +660,71 @@ const resetForm = () => {
         setFilteredClients([]);
       } catch {}
     }
-  }, [params.client]);
+    if ((params as any).report) {
+      try {
+        const reportObj = JSON.parse(Array.isArray((params as any).report) ? (params as any).report[0] : (params as any).report as string);
+        console.log('Loading report for edit:', reportObj);
+        console.log('Supabase ID from params:', (params as any).supabaseId);
+        
+        // Reset all states first
+        if (reportObj.clientData) setClientData(reportObj.clientData);
+        
+        // Support both legacy top-level arrays and nested photos object
+        const photos = reportObj.photos || {};
+        setBeforePhotos(Array.isArray(reportObj.beforePhotos) ? reportObj.beforePhotos : (Array.isArray(photos.beforePhotos) ? photos.beforePhotos : []));
+        setAfterPhotos(Array.isArray(reportObj.afterPhotos) ? reportObj.afterPhotos : (Array.isArray(photos.afterPhotos) ? photos.afterPhotos : []));
+        setExhaustFanPhotos(Array.isArray(reportObj.exhaustFanPhotos) ? reportObj.exhaustFanPhotos : (Array.isArray(photos.exhaustFanPhotos) ? photos.exhaustFanPhotos : []));
+        setDuctFanPhotos(Array.isArray(reportObj.ductFanPhotos) ? reportObj.ductFanPhotos : (Array.isArray(photos.ductFanPhotos) ? photos.ductFanPhotos : []));
+        setCanopyPhotos(Array.isArray(reportObj.canopyPhotos) ? reportObj.canopyPhotos : (Array.isArray(photos.canopyPhotos) ? photos.canopyPhotos : []));
+        
+        if (Array.isArray(reportObj.selectedServices)) {
+          setSelectedCategories(reportObj.selectedServices);
+          setServiceSelected(reportObj.selectedServices.length > 0);
+        } else {
+          setSelectedCategories([]);
+          setServiceSelected(false);
+        }
+        
+        if (reportObj.hoodType) setHoodType(reportObj.hoodType);
+        else setHoodType({ filter: false, extractor: false, waterWash: false });
+        
+        if (typeof reportObj.damperOperates === 'boolean') setDamperOperates(reportObj.damperOperates);
+        else setDamperOperates(false);
+        
+        if (typeof reportObj.filterConfirming === 'boolean') setFilterConfirming(reportObj.filterConfirming);
+        else setFilterConfirming(false);
+        
+        if (reportObj.fanOptions) setFanOptions(reportObj.fanOptions);
+        else setFanOptions({ upBlast: false, inLine: false, utility: false, directDrive: false, wall: false, roof: false, fanBelt: false, fanType: false, roofAccess: false });
+        
+        if (reportObj.preCheck) setPreCheck(reportObj.preCheck);
+        else setPreCheck({ exhaustFanOperational: false, exhaustFanNoisy: false, bareWires: false, hingeKit: false, fanCleanOut: false, hoodLights: false, greaseRoof: false });
+        
+        if (reportObj.servicePerformed) setServicePerformed(reportObj.servicePerformed);
+        else setServicePerformed({ hoodCleaned: false, verticalDuct: false, horizontalDuct: false });
+        
+        if (reportObj.notCleaned) setNotCleaned(reportObj.notCleaned);
+        else setNotCleaned({ duct: false, fan: false, other: false });
+        
+        if (reportObj.ductReasons) setDuctReasons(reportObj.ductReasons);
+        else setDuctReasons({ insufficientAccess: false, severeWeather: false, insufficientTime: false, other: false });
+        
+        if (reportObj.fanReasons) setFanReasons(reportObj.fanReasons);
+        else setFanReasons({ insufficientAccess: false, severeWeather: false, insufficientTime: false, mechanicalIssue: false, notAccessible: false, other: false });
+        
+        if (reportObj.otherReasons) setOtherReasons(reportObj.otherReasons);
+        else setOtherReasons({ insufficientAccess: false, severeWeather: false, insufficientTime: false, other: false });
+        
+        if (reportObj.postCheck) setPostCheck(reportObj.postCheck);
+        else setPostCheck({ leaks: false, fanRestarted: false, pilotLights: false, ceilingTiles: false, floorsMopped: false, waterDisposed: false, photosTaken: false, buildingSecured: false });
+        
+        if (reportObj.comments) setComments(reportObj.comments);
+        else setComments({ hoodType: '', fanType: '', preCleaning: '', servicePerformed: '', areasNotCleaned: '', postCleaning: '' });
+      } catch (e) {
+        console.error('Error loading report:', e);
+      }
+    }
+  }, [params.client, (params as any).report]);
   return (
     <SafeAreaView style={commonStyles.container}>
       {/* Header */}
@@ -679,8 +918,8 @@ const resetForm = () => {
           contentStyle={styles.categoryButtonContent}
         >
           {selectedCategories.length > 0
-            ? `${selectedCategories.length} Service(s) sélectionné(s)`
-            : 'Sélectionner les services'}
+            ? `${selectedCategories.length} service(s) selected`
+            : 'Select services'}
         </PaperButton>
       }
     >
@@ -745,7 +984,27 @@ const resetForm = () => {
       />
       
       {/* Show specific service uploads based on selection */}
-      
+      {selectedCategories.includes('exhaust') && (
+        <MultiPhotoUpload
+          title="Exhaust Fan Photos"
+          photoUris={exhaustFanPhotos}
+          onChange={setExhaustFanPhotos}
+        />
+      )}
+      {selectedCategories.includes('duct') && (
+        <MultiPhotoUpload
+          title="Duct Fan Photos"
+          photoUris={ductFanPhotos}
+          onChange={setDuctFanPhotos}
+        />
+      )}
+      {selectedCategories.includes('canopy') && (
+        <MultiPhotoUpload
+          title="Canopy Photos"
+          photoUris={canopyPhotos}
+          onChange={setCanopyPhotos}
+        />
+      )}
     </View>
   )}
 </View>
@@ -1180,14 +1439,14 @@ const resetForm = () => {
         {/* Export PDF */}
      <View style={styles.buttonRow}>
           <Button
-            text="registre"
-            onPress={handleSaveToAsyncStorage}
-            style={{flex:1, marginRight: 10, backgroundColor: colors.primary, borderRadius: 16}}
-            textStyle={{color: '#fff', fontWeight: '700'}}
-          />
+            text={isSavingOnline ? 'Saving...' : 'Save'}
+           onPress={handleSaveToSupabase}
+           style={{flex:1, marginRight: 10, backgroundColor: colors.primary, borderRadius: 16}}
+           textStyle={{color: '#fff', fontWeight: '700'}}
+         />
 
           <Button
-            text={isGenerating ? 'Génération...' : 'Exporte PDF'}
+            text={isGenerating ? 'Generating...' : 'Export PDF'}
             onPress={handleExportPDF}
             style={{flex:1, backgroundColor: colors.success, borderRadius: 16}}
             textStyle={{color: '#fff', fontWeight: '700'}}
