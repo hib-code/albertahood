@@ -27,78 +27,112 @@ export default function SearchClientScreen() {
   const [filteredReports, setFilteredReports] = useState<ReportPayload[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [selectedReport, setSelectedReport] = useState<ReportPayload | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [viewModalVisible, setViewModalVisible] = useState(false);
-  const [viewClient, setViewClient] = useState<ClientData | null>(null);
-  const [viewReport, setViewReport] = useState<ReportPayload | null>(null);
+
   const { refresh } = useLocalSearchParams();
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const loadReports = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('reports')
-        .select('id, created_at, data')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-
-      const reports: ReportPayload[] = (data || []).map((row: any) => {
-        const d = row.data as ReportPayload;
-        (d as any)._supabaseId = row.id;
-        (d as any)._createdAt = row.created_at;
-        return d;
-      });
-      setAllReports(reports);
-      setFilteredReports(reports);
-    } catch (err) {
-      console.error('Error loading from Supabase:', err);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadReports();
-  }, [loadReports]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadReports();
-    }, [loadReports])
-  );
-  useEffect(() => {
-    if (refresh === '1') loadReports();
-  }, [refresh, loadReports]);
-  
-
-  // Recherche
-  const applySearch = (query: string) => {
-    setIsSearching(true);
-    setTimeout(() => {
-      const q = query.trim().toLowerCase();
-      const results = q
-        ? allReports.filter(r => {
-            const c = r.clientData;
-            return (
-              (c.name || '').toLowerCase().includes(q) ||
-              (c.email || '').toLowerCase().includes(q) ||
-              (c.phone || '').toLowerCase().includes(q)
-            );
-          })
-        : allReports;
-
-      setFilteredReports(results);
-      setIsSearching(false);
-    }, 300);
+useEffect(() => {
+  const fetchUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUserId(user?.id ?? null);
   };
+  fetchUser();
+}, []);
+const saveReport = async (reportData: ReportPayload) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const ownerId = user?.id || 'guest';
+
+    const { data, error } = await supabase
+      .from('reports')
+      .insert([{ data: reportData, owner_id: ownerId }])
+      .select(); // renvoie id, created_at, owner_id, data
+
+    if (error) throw error;
+
+    const saved = data[0];
+
+    // On retourne un objet combiné
+    return {
+      ...saved.data,        // ReportPayload
+      _supabaseId: saved.id,
+      _createdAt: saved.created_at,
+      owner_id: saved.owner_id
+    } as ReportPayload & { _supabaseId: string; _createdAt: string; owner_id: string };
+  } catch (err) {
+    console.error('Save failed:', err);
+    throw err;
+  }
+};
+
+const handleSaveReport = async (reportData: ReportPayload) => {
+  try {
+    const newReport = await saveReport(reportData);
+
+    setAllReports(prev => [newReport, ...prev]);
+    setFilteredReports(prev => [newReport, ...prev]);
+
+    console.log('Report saved and state updated');
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+
+
+
+  const loadReports = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('reports')
+      .select('id, created_at, data, owner_id')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const reports: ReportPayload[] = (data || []).map((row: any) => {
+      const d = row.data as ReportPayload;
+      (d as any)._supabaseId = row.id;
+      (d as any)._createdAt = row.created_at;
+      (d as any).owner_id = row.owner_id;
+      return d;
+    });
+
+    setAllReports(reports);
+    setFilteredReports(reports);
+  } catch (err) {
+    console.error('Error loading reports:', err);
+  }
+};
+
+
+  useEffect(() => { loadReports(); }, [loadReports]);
+  useFocusEffect(useCallback(() => { loadReports(); }, [loadReports]));
+  useEffect(() => { if (refresh === '1') loadReports(); }, [refresh, loadReports]);
+
+ const applySearch = (query: string) => {
+  setIsSearching(true);
+  setTimeout(() => {
+    const q = query.trim().toLowerCase();
+    const results = q
+      ? allReports.filter(r => {
+          const c = r.clientData;
+          return (
+            (c.name || '').toLowerCase().includes(q) ||
+            (c.email || '').toLowerCase().includes(q) ||
+            (c.phone || '').toLowerCase().includes(q)
+          );
+        })
+      : allReports;
+
+    setFilteredReports(results);
+    setIsSearching(false);
+  }, 300);
+};
+
 
   const handleSearch = () => applySearch(searchQuery);
 
-  // Sélection client pour modal
-  const handleClientSelect = (report: ReportPayload) => {
-    setSelectedReport(report);
-    setModalVisible(true);
-  };
-
-  // Export PDF
   const exportClientPDF = async (client: ClientData) => {
     setIsGenerating(true);
     try {
@@ -120,21 +154,25 @@ export default function SearchClientScreen() {
     }
   };
 
-  // Éditer un client
   const handleEditClient = (report: ReportPayload) => {
-    const original = allReports.find(
-      r => r.clientData.email === report.clientData.email && r.clientData.name === report.clientData.name
-    );
-    const supabaseId = original ? (original as any)._supabaseId : '';
+    if ((report as any).owner_id && (report as any).owner_id !== userId) {
+  Alert.alert('Permission denied', 'You can only edit your own reports.');
+  return;
+}
+
+
     router.push({
       pathname: '/new-report',
-      params: { report: JSON.stringify(report), supabaseId },
+      params: { report: JSON.stringify(report), supabaseId: (report as any)._supabaseId },
     });
-    
   };
 
-  // Supprimer un client
   const handleDeleteClient = (report: ReportPayload) => {
+    if ((report as any).owner_id !== userId) {
+      Alert.alert('Permission denied', 'You can only delete your own reports.');
+      return;
+    }
+
     Alert.alert('Delete', 'Confirm deletion of this report?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -151,15 +189,10 @@ export default function SearchClientScreen() {
             // Suppression des photos (optionnelle)
             const photos: Record<string, string[] | string> = (report as any).photos || {};
             const urls: string[] = [];
-
-            // Helper pour ajouter une photo ou un tableau de photos
             const addPhoto = (photo?: string | string[]) => {
               if (!photo) return;
-              if (Array.isArray(photo)) {
-                urls.push(...photo);
-              } else {
-                urls.push(photo);
-              }
+              if (Array.isArray(photo)) urls.push(...photo);
+              else urls.push(photo);
             };
             addPhoto(photos.beforePhotos);
             addPhoto(photos.afterPhotos);
@@ -169,13 +202,14 @@ export default function SearchClientScreen() {
             addPhoto(photos.beforePhoto);
             addPhoto(photos.afterPhoto);
             addPhoto(photos.signature);
+
             const prefix = '/storage/v1/object/public/reports/';
-            const paths = urls.filter(u => typeof u === 'string' && u.includes(prefix)).map(u => u.split(prefix)[1]).filter(Boolean);
+            const paths = urls.filter(u => typeof u === 'string' && u.includes(prefix))
+                              .map(u => u.split(prefix)[1])
+                              .filter(Boolean);
             if (paths.length) await supabase.storage.from('reports').remove(paths as string[]);
 
-            const next = allReports.filter(
-              r => !(r.clientData.email === report.clientData.email && r.clientData.name === report.clientData.name)
-            );
+            const next = allReports.filter(r => (r as any)._supabaseId !== supabaseId);
             setAllReports(next);
             setFilteredReports(next);
           } catch (e: any) {
@@ -186,13 +220,6 @@ export default function SearchClientScreen() {
     ]);
   };
 
-  const handleViewClient = (report: ReportPayload) => {
-    setViewClient(report.clientData);
-    setViewReport(report);
-    setViewModalVisible(true);
-  };
-
-  // Render client
   const renderClientItem = ({ item }: { item: ReportPayload }) => (
     <View style={styles.clientItem}>
       <View style={styles.clientInfo}>
@@ -204,9 +231,6 @@ export default function SearchClientScreen() {
         <Text style={styles.clientPhone}>{item.clientData.phone}</Text>
       </View>
       <View style={{ flexDirection: 'row', marginTop: 8, justifyContent: 'flex-end' }}>
-        <TouchableOpacity style={{ marginRight: 12 }} onPress={() => handleViewClient(item)}>
-          <Text style={{ color: colors.primary }}>View</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={{ marginRight: 12 }} onPress={() => handleEditClient(item)}>
           <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Edit</Text>
         </TouchableOpacity>
@@ -257,13 +281,11 @@ export default function SearchClientScreen() {
             <FlatList
               data={filteredReports}
               renderItem={renderClientItem}
-              keyExtractor={(item) => item.clientData.email}
+              keyExtractor={(item) => (item as any)._supabaseId}
               showsVerticalScrollIndicator={false}
             />
           </>
         )}
-
-        {/* Modals et overlay de génération restent identiques */}
       </View>
     </SafeAreaView>
   );

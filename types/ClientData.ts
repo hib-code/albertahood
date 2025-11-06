@@ -33,4 +33,32 @@ export interface ClientData {
 export interface PhotoUpload {
   uri: string;
   type: 'before' | 'after';
+   uploadedUrl?: string;     
 }
+
+// types/ClientData.ts
+
+
+
+// --- Structure principale du rapport ---
+export type ReportPayload = {
+  clientData: ClientData;
+
+  // Dates et info générales
+  serviceDate?: string;
+  technicianName?: string;
+  selectedServices?: string[];
+
+  // Photos (optionnelles)
+  beforePhotos?: string[];
+  afterPhotos?: string[];
+  exhaustFanPhotos?: string[];
+  ductFanPhotos?: string[];
+  canopyPhotos?: string[];
+  signature?: string;
+
+  // Métadonnées optionnelles
+  comments?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};

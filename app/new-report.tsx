@@ -33,6 +33,15 @@ import { supabase } from '../lib/supabase';
 export default function NewReportScreen() {
   const params = useLocalSearchParams();
   
+const getUserId = async () => {
+  const { data: sessionData, error } = await supabase.auth.getSession();
+  if (error) {
+    console.warn('No active session:', error.message);
+    return null;
+  }
+  return sessionData?.session?.user?.id || null;
+};
+
 
 
   //-------------date format--------------------
@@ -554,8 +563,11 @@ const handleSaveToSupabase = async () => {
   if (isSavingOnline) return;
   setIsSavingOnline(true);
   try {
-    // Upload images and signature to storage
+    // 1️⃣ Upload images
     const uploaded = await uploadMedia();
+
+    // 2️⃣ Get userId
+    const userId = await getUserId();
 
     const record = {
       clientData,
@@ -574,18 +586,22 @@ const handleSaveToSupabase = async () => {
       comments,
       photos: uploaded,
       createdAt: new Date().toISOString(),
+      owner_id: userId, // ✅ هاد السطر مهم
     };
 
     const supabaseId = (params as any).supabaseId as string | undefined;
     console.log('Saving with supabaseId:', supabaseId);
     if (supabaseId && supabaseId.trim()) {
-      const { error } = await supabase.from('reports').update({ data: record }).eq('id', supabaseId);
+      const { error } = await supabase
+        .from('reports')
+        .update({ data: record, owner_id: userId })
+        .eq('id', supabaseId);
       if (error) {
         console.error('Update error:', error);
         throw error;
       }
       Alert.alert('Success', 'Updated online!');
-      try { router.replace('/search-client'); } catch {}
+      router.replace('/search-client');
     } else {
       const { error } = await supabase.from('reports').insert([{ data: record }]);
       if (error) {
@@ -595,12 +611,10 @@ const handleSaveToSupabase = async () => {
       Alert.alert('Success', 'Created online!');
     }
 
-    // Optional: keep local backup
-    try {
-      const existingReportsJson = await AsyncStorage.getItem('reports');
-      const existingReports = existingReportsJson ? JSON.parse(existingReportsJson) : [];
-      await AsyncStorage.setItem('reports', JSON.stringify([...existingReports, record]));
-    } catch {}
+    // 3️⃣ Backup local
+    const existingReportsJson = await AsyncStorage.getItem('reports');
+    const existingReports = existingReportsJson ? JSON.parse(existingReportsJson) : [];
+    await AsyncStorage.setItem('reports', JSON.stringify([...existingReports, record]));
 
     resetForm();
   } catch (e: any) {
@@ -610,6 +624,7 @@ const handleSaveToSupabase = async () => {
     setIsSavingOnline(false);
   }
 };
+
 
 // Fonction pour réinitialiser le formulaire
 const resetForm = () => {

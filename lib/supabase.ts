@@ -9,6 +9,20 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase env vars missing: EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    detectSessionInUrl: false,
+  },
+});
+export async function updateReport(reportId: string, newData: any) {
+  const { data, error } = await supabase
+    .from('reports')
+    .update({ data: newData })
+    .eq('id', reportId);
+
+  if (error) throw error;
+  return data;
+}
 
 
