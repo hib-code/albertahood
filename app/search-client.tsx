@@ -162,10 +162,13 @@ const handleSaveReport = async (reportData: ReportPayload) => {
 
 
     router.push({
-      pathname: '/new-report',
-      params: { report: JSON.stringify(report), supabaseId: (report as any)._supabaseId },
-    });
-  };
+  pathname: '/new-report',
+  params: {
+    report: JSON.stringify(report),
+    supabaseId: (report as any)._supabaseId || '', // ajoute un fallback
+  },
+});
+};
 
   const handleDeleteClient = (report: ReportPayload) => {
     if ((report as any).owner_id !== userId) {

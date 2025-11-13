@@ -601,7 +601,7 @@ const handleSaveToSupabase = async () => {
         throw error;
       }
       Alert.alert('Success', 'Updated online!');
-      router.replace('/search-client');
+      router.replace('/search-client?refresh=1');
     } else {
       const { error } = await supabase.from('reports').insert([{ data: record }]);
       if (error) {
