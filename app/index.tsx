@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Text, View, TouchableOpacity, StyleSheet } from 'react-native';
 import { commonStyles, colors } from '../styles/commonStyles';

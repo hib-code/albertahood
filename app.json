@@ -2,33 +2,33 @@
   "expo": {
     "name": "ALBERTA HOOD CLEANING",
     "slug": "alberta",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/final_quest_240x240.png",
+    "icon": "./assets/images/square-image.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/Logo.png",
+      "image": "./assets/images/square-image.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.Natively",
+      "bundleIdentifier": "com.albertahood.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/Logo.png",
+        "foregroundImage": "./assets/images/square-image.png",
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.Natively"
+      "package": "com.albertahood.app"
     },
     "web": {
-      "favicon": "./assets/images/Logo.png",
+      "favicon": "./assets/images/square-image.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -45,9 +45,9 @@
       "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpteGJrdWlya3lqbWR5b3hwcG1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5MjI3NzcsImV4cCI6MjA3NzQ5ODc3N30.86MqHtH-uuGc9S1zL00_FOpVfv6QQT034gEd-cSmreo",
       "router": {},
       "eas": {
-        "projectId": "563ee88f-c96c-45bb-a87f-59052f617787"
+        "projectId": "78082af8-a0c9-4869-a5e0-e932ec7ae3d6"
       }
     },
-    "owner": "kobayasheseen"
+    "owner": "clarrk"
   }
 }
