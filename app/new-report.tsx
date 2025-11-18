@@ -30,6 +30,37 @@ import * as FileSystem from 'expo-file-system';
 import { useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
+// Function to download remote URLs to local file URIs
+const downloadRemotePhotos = async (photoUrls: string[]): Promise<string[]> => {
+  if (!photoUrls || photoUrls.length === 0) return [];
+
+  const localUris: string[] = [];
+  for (const url of photoUrls) {
+    if (!url || !url.startsWith('http')) {
+      // Keep local URIs as-is
+      if (url) localUris.push(url);
+      continue;
+    }
+
+    try {
+      // Download to document directory
+      const filename = `downloaded_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const localUri = `${(FileSystem as any).documentDirectory}${filename}`;
+
+      const downloadResult = await FileSystem.downloadAsync(url, localUri);
+      if (downloadResult.status === 200) {
+        localUris.push(downloadResult.uri);
+      } else {
+        console.warn('Failed to download photo:', url);
+      }
+    } catch (error) {
+      console.warn('Error downloading photo:', url, error);
+    }
+  }
+
+  return localUris;
+};
+
 export default function NewReportScreen() {
   const params = useLocalSearchParams();
   
