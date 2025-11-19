@@ -81,7 +81,7 @@ const handleSaveReport = async (reportData: ReportPayload) => {
 
 
 
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
   try {
     const { data, error } = await supabase
       .from('reports')
@@ -103,7 +103,7 @@ const handleSaveReport = async (reportData: ReportPayload) => {
   } catch (err) {
     console.error('Error loading reports:', err);
   }
-};
+}, []);
 
 
   useEffect(() => { loadReports(); }, [loadReports]);
@@ -111,11 +111,14 @@ const handleSaveReport = async (reportData: ReportPayload) => {
   useEffect(() => { if (refresh === '1') loadReports(); }, [refresh, loadReports]);
 
  const applySearch = (query: string) => {
+  console.log('applySearch called with query:', query);
+  console.log('allReports length:', allReports.length);
   setIsSearching(true);
   setTimeout(() => {
     const q = query.trim().toLowerCase();
     const results = q
       ? allReports.filter(r => {
+          if (!r.clientData) return false;
           const c = r.clientData;
           return (
             (c.name || '').toLowerCase().includes(q) ||
@@ -125,6 +128,7 @@ const handleSaveReport = async (reportData: ReportPayload) => {
         })
       : allReports;
 
+    console.log('filtered results length:', results.length);
     setFilteredReports(results);
     setIsSearching(false);
   }, 300);
@@ -223,29 +227,33 @@ const handleSaveReport = async (reportData: ReportPayload) => {
     ]);
   };
 
-  const renderClientItem = ({ item }: { item: ReportPayload }) => (
-    <View style={styles.clientItem}>
-      <View style={styles.clientInfo}>
-        <View style={styles.clientHeader}>
-          <Text style={styles.clientName}>{item.clientData.name}</Text>
-          <Icon name="chevron-forward" size={20} color={colors.textSecondary} />
+  const renderClientItem = ({ item }: { item: ReportPayload }) => {
+    if (!item.clientData) return null;
+
+    return (
+      <View style={styles.clientItem}>
+        <View style={styles.clientInfo}>
+          <View style={styles.clientHeader}>
+            <Text style={styles.clientName}>{item.clientData.name}</Text>
+            <Icon name="chevron-forward" size={20} color={colors.textSecondary} />
+          </View>
+          <Text style={styles.clientEmail}>{item.clientData.email}</Text>
+          <Text style={styles.clientPhone}>{item.clientData.phone}</Text>
         </View>
-        <Text style={styles.clientEmail}>{item.clientData.email}</Text>
-        <Text style={styles.clientPhone}>{item.clientData.phone}</Text>
+        <View style={{ flexDirection: 'row', marginTop: 8, justifyContent: 'flex-end' }}>
+          <TouchableOpacity style={{ marginRight: 12 }} onPress={() => handleEditClient(item)}>
+            <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{ marginRight: 12 }} onPress={() => exportClientPDF(item.clientData)}>
+            <Text style={{ color: 'orange', fontWeight: 'bold' }}>PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => handleDeleteClient(item)}>
+            <Text style={{ color: 'red', fontWeight: 'bold' }}>Delete</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={{ flexDirection: 'row', marginTop: 8, justifyContent: 'flex-end' }}>
-        <TouchableOpacity style={{ marginRight: 12 }} onPress={() => handleEditClient(item)}>
-          <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={{ marginRight: 12 }} onPress={() => exportClientPDF(item.clientData)}>
-          <Text style={{ color: 'orange', fontWeight: 'bold' }}>PDF</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleDeleteClient(item)}>
-          <Text style={{ color: 'red', fontWeight: 'bold' }}>Delete</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={commonStyles.container}>
