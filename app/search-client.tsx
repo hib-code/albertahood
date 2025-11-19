@@ -20,6 +20,38 @@ import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams } from 'expo-router';
+import * as FileSystem from 'expo-file-system';
+
+// Function to download remote URLs to local file URIs
+const downloadRemotePhotos = async (photoUrls: string[]): Promise<string[]> => {
+  if (!photoUrls || photoUrls.length === 0) return [];
+
+  const localUris: string[] = [];
+  for (const url of photoUrls) {
+    if (!url || !url.startsWith('http')) {
+      // Keep local URIs as-is
+      if (url) localUris.push(url);
+      continue;
+    }
+
+    try {
+      // Download to document directory
+      const filename = `downloaded_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const localUri = `${(FileSystem as any).documentDirectory}${filename}`;
+
+      const downloadResult = await FileSystem.downloadAsync(url, localUri);
+      if (downloadResult.status === 200) {
+        localUris.push(downloadResult.uri);
+      } else {
+        console.warn('Failed to download photo:', url);
+      }
+    } catch (error) {
+      console.warn('Error downloading photo:', url, error);
+    }
+  }
+
+  return localUris;
+};
 
 export default function SearchClientScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -143,7 +175,45 @@ const handleSaveReport = async (reportData: ReportPayload) => {
       const report = allReports.find(
         r => r.clientData.email === client.email && r.clientData.name === client.name
       ) || { clientData: client };
-      const pdfUri = await generatePDF(report as ReportPayload);
+
+      // Download remote photos to local URIs for PDF generation
+      const photos = (report as any).photos || {};
+      const downloadedBeforePhotos = await downloadRemotePhotos(Array.isArray(photos.beforePhotos) ? photos.beforePhotos : []);
+      const downloadedAfterPhotos = await downloadRemotePhotos(Array.isArray(photos.afterPhotos) ? photos.afterPhotos : []);
+      const downloadedExhaustFanPhotos = await downloadRemotePhotos(Array.isArray(photos.exhaustFanPhotos) ? photos.exhaustFanPhotos : []);
+      const downloadedDuctFanPhotos = await downloadRemotePhotos(Array.isArray(photos.ductFanPhotos) ? photos.ductFanPhotos : []);
+      const downloadedCanopyPhotos = await downloadRemotePhotos(Array.isArray(photos.canopyPhotos) ? photos.canopyPhotos : []);
+      const downloadedBeforePhoto = photos.beforePhoto && photos.beforePhoto.startsWith('http') ? (await downloadRemotePhotos([photos.beforePhoto]))[0] : photos.beforePhoto;
+      const downloadedAfterPhoto = photos.afterPhoto && photos.afterPhoto.startsWith('http') ? (await downloadRemotePhotos([photos.afterPhoto]))[0] : photos.afterPhoto;
+      const downloadedSignature = photos.signature && photos.signature.startsWith('http') ? (await downloadRemotePhotos([photos.signature]))[0] : photos.signature;
+
+      const downloadedPhotos = {
+        beforePhotos: downloadedBeforePhotos,
+        afterPhotos: downloadedAfterPhotos,
+        exhaustFanPhotos: downloadedExhaustFanPhotos,
+        ductFanPhotos: downloadedDuctFanPhotos,
+        canopyPhotos: downloadedCanopyPhotos,
+        beforePhoto: downloadedBeforePhoto,
+        afterPhoto: downloadedAfterPhoto,
+        signature: downloadedSignature,
+      };
+
+      const reportWithLocalPhotos = {
+        ...report,
+        beforePhotos: downloadedPhotos.beforePhotos,
+        afterPhotos: downloadedPhotos.afterPhotos,
+        exhaustFanPhotos: downloadedPhotos.exhaustFanPhotos,
+        ductFanPhotos: downloadedPhotos.ductFanPhotos,
+        canopyPhotos: downloadedPhotos.canopyPhotos,
+        clientData: {
+          ...report.clientData,
+          beforePhoto: downloadedPhotos.beforePhoto,
+          afterPhoto: downloadedPhotos.afterPhoto,
+          signature: downloadedPhotos.signature,
+        },
+      };
+
+      const pdfUri = await generatePDF(reportWithLocalPhotos as ReportPayload);
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(pdfUri, {

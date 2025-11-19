@@ -23,9 +23,7 @@ import PhotoUpload from '../components/PhotoUpload';
 import MultiPhotoUpload from '../components/MultiPhotoUpload';
 import { Checkbox, Menu, Button as PaperButton } from 'react-native-paper';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Signature from 'react-native-signature-canvas';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 import { useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
@@ -542,19 +540,33 @@ const uploadFileToStorage = async (bucket: string, uri: string, folder: string) 
 
 // Upload arrays and single media; return map of public URLs
 const uploadMedia = async () => {
+  console.log('Starting uploadMedia with:', {
+    beforePhotos: beforePhotos.length,
+    afterPhotos: afterPhotos.length,
+    exhaustFanPhotos: exhaustFanPhotos.length,
+    ductFanPhotos: ductFanPhotos.length,
+    canopyPhotos: canopyPhotos.length,
+    beforePhoto: !!clientData.beforePhoto,
+    afterPhoto: !!clientData.afterPhoto,
+    signature: !!clientData.signature,
+  });
+
   const bucket = 'reports';
   const folderBase = `report_${Date.now()}`;
   const mapUpload = async (uris: string[], sub: string) => {
     const results = await Promise.all(
-      (uris || []).map(async (u) => {
+      (uris || []).map(async (u, i) => {
+        console.log(`Uploading ${sub} photo ${i}: ${u.substring(0,50)}...`);
         if (typeof u === 'string' && /^https?:\/\//i.test(u)) {
-          // Already online URL → keep as-is
+          console.log('Already uploaded, keeping:', u);
           return u;
         }
-        return await uploadFileToStorage(bucket, u, `${folderBase}/${sub}`);
+        const url = await uploadFileToStorage(bucket, u, `${folderBase}/${sub}`);
+        console.log('Upload result for ${sub} ${i}:', url);
+        return url || u; // Fallback to local URI if upload fails
       })
     );
-    return results.filter(Boolean) as string[];
+    return results; // Keep all, including local URIs if upload failed
   };
   const uploadedBefore = await mapUpload(beforePhotos, 'before');
   const uploadedAfter = await mapUpload(afterPhotos, 'after');
@@ -565,20 +577,20 @@ const uploadMedia = async () => {
   const singleBefore = clientData.beforePhoto
     ? (/^https?:\/\//i.test(clientData.beforePhoto)
         ? clientData.beforePhoto
-        : await uploadFileToStorage(bucket, clientData.beforePhoto, `${folderBase}/single`))
+        : await uploadFileToStorage(bucket, clientData.beforePhoto, `${folderBase}/single`) || clientData.beforePhoto)
     : null;
   const singleAfter = clientData.afterPhoto
     ? (/^https?:\/\//i.test(clientData.afterPhoto)
         ? clientData.afterPhoto
-        : await uploadFileToStorage(bucket, clientData.afterPhoto, `${folderBase}/single`))
+        : await uploadFileToStorage(bucket, clientData.afterPhoto, `${folderBase}/single`) || clientData.afterPhoto)
     : null;
   const signatureUrl = clientData.signature
     ? (clientData.signature.startsWith('data:')
-        ? await uploadFileToStorage(bucket, clientData.signature, `${folderBase}/signature`)
+        ? await uploadFileToStorage(bucket, clientData.signature, `${folderBase}/signature`) || clientData.signature
         : /^https?:\/\//i.test(clientData.signature) ? clientData.signature : null)
     : null;
 
-  return {
+  const uploaded = {
     beforePhotos: uploadedBefore,
     afterPhotos: uploadedAfter,
     exhaustFanPhotos: uploadedExhaust,
@@ -588,6 +600,9 @@ const uploadMedia = async () => {
     afterPhoto: singleAfter,
     signature: signatureUrl,
   };
+
+  console.log('Upload media completed:', uploaded);
+  return uploaded;
 };
 
 const handleSaveToSupabase = async () => {
